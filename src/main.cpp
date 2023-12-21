@@ -8,7 +8,7 @@
 // https://github.com/r89m/PushButton
 // https://github.com/r89m/Button
 // https://github.com/thomasfredericks/Bounce2
-
+// #define CONFIG_TINYUSB_HID_ENABLED 1
 #include <Button.h>
 #include <ButtonEventCallback.h>
 #include <PushButton.h>
@@ -28,6 +28,7 @@
 // Version
 #define VERSION "2.3.2"
 
+USBHIDKeyboard Keyboard;
 // Init BLE
 BleKeyboard bleKeyboard("XCREMOTE", "XCNAV UG", 100);
 
@@ -104,6 +105,7 @@ int Cruise_Climb = LOW;
 void keyboardPress(char key)
 {
   bleKeyboard.press(key);
+  Keyboard.press(key);
 }
 
 void Button_onRelease(Button &btn, uint16_t duration)
@@ -117,6 +119,7 @@ void Button_onRelease(Button &btn, uint16_t duration)
   if (btn.is(Cancel))
     keyboardPress(Cancel_Press_Key);
   bleKeyboard.releaseAll();
+  Keyboard.releaseAll();
 }
 
 void Button_onHold(Button &btn, uint16_t duration)
@@ -128,6 +131,7 @@ void Button_onHold(Button &btn, uint16_t duration)
   if (btn.is(Circle))
     keyboardPress(Circle_Hold_Key);
   bleKeyboard.releaseAll();
+  Keyboard.releaseAll();
 }
 
 void Joy_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
@@ -143,6 +147,7 @@ void Joy_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
     if (btn.is(Right))
       keyboardPress(Right_Press_Key);
     bleKeyboard.releaseAll();
+    Keyboard.releaseAll();
   }
   Joy_Active_Counter = Joy_Active_Counter + 1;
   if (Joy_Inactive && Joy_Active_Counter > Joy_Active_Threshold)
@@ -162,6 +167,7 @@ void Joy_onRelease(Button &btn, uint16_t duration)
 void SingleClick()
 { // this function will be called when the Joy center button is pressed 1 time only.
   bleKeyboard.write(KEY_RETURN);
+  Keyboard.write(KEY_RETURN);
   Serial.println("SingleClick() detected.");
 } // SingleClick
 
@@ -170,11 +176,13 @@ void DoubleClick()
   if (Cruise_Climb == LOW)
   {
     bleKeyboard.print("V");
+    Keyboard.print("V");
     Serial.println("Vario");
   }
   else
   {
     bleKeyboard.print("S");
+    Keyboard.print("S");
     Serial.println("Speed to fly");
   }
   Cruise_Climb = !Cruise_Climb; // reverse the Cruise_Climb
@@ -183,6 +191,7 @@ void DoubleClick()
 void HoldCenter()
 { // this function will be called when the Joy center button is held down for 0.5 second or more.
   bleKeyboard.print("P");
+  Keyboard.print("P");
   Serial.println("PAN()");
   HoldCenterTime = millis() - 500; // as set in setPressTicks()
 } // HoldCenter()
@@ -195,10 +204,12 @@ void Button_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
     {
       keyboardPress(Cancel_Hold_Key);
       bleKeyboard.releaseAll();
+      keyboard.releaseAll();
     }
     if (duration > 5000)
     {
       bleKeyboard.print("E");
+      Keyboard.print("E");
       delay(1000);
       ESP.restart(); // ESP32_Restart
     }
@@ -375,7 +386,6 @@ void updating_server_start(void)
   server.begin();
 }
 
-
 /*
  * ******************************************************
  * END - Updating server
@@ -406,7 +416,8 @@ void setup()
   button.attachLongPressStart(HoldCenter);
 
   // pinMode(LED_Pin, OUTPUT);
-
+  Keyboard.begin();
+  USB.begin();
   if (digitalRead(Center_Pin) == 0)
     updating_server_start();
   else
@@ -473,4 +484,3 @@ void loop()
     }
   }
 }
-
