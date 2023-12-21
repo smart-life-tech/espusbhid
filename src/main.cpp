@@ -484,5 +484,19 @@ void loop()
       Circle.update();
       Cancel.update();
     }
+    else
+    {
+#ifdef ARDUINO_USB_MODE // if the board is usb enabled, proceed with the command usb
+      Up.update();
+      Down.update();
+      Left.update();
+      Right.update();
+      Center.update();
+      Rectangle.update();
+      Triangle.update();
+      Circle.update();
+      Cancel.update();
+#endif
+    }
   }
 }
