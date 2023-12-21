@@ -204,7 +204,7 @@ void Button_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
     {
       keyboardPress(Cancel_Hold_Key);
       bleKeyboard.releaseAll();
-      keyboard.releaseAll();
+      Keyboard.releaseAll();
     }
     if (duration > 5000)
     {
@@ -412,12 +412,14 @@ void setup()
   // link the xxxclick functions to be called on xxxclick event.
   button.attachClick(SingleClick);
   button.attachDoubleClick(DoubleClick);
-  button.setPressTicks(1000); // that is the time when LongHoldCenter is called
+  button.setPressMs(1000); // that is the time when LongHoldCenter is called
   button.attachLongPressStart(HoldCenter);
 
   // pinMode(LED_Pin, OUTPUT);
   Keyboard.begin();
   USB.begin();
+  delay(1000);
+  Keyboard.write('R');
   if (digitalRead(Center_Pin) == 0)
     updating_server_start();
   else
