@@ -13,9 +13,10 @@
 #include <ButtonEventCallback.h>
 #include <PushButton.h>
 #include <Bounce2.h>
-// #include <BluetoothSerial.h>
-// #include <BleKeyboard.h>
-//  Updating server
+#include <BluetoothSerial.h>
+#include <BleKeyboard.h>
+
+// Updating server
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WebServer.h>
@@ -28,6 +29,8 @@
 #define VERSION "2.3.2"
 
 USBHIDKeyboard Keyboard;
+// Init BLE
+BleKeyboard bleKeyboard("XCREMOTE", "XCNAV UG", 100);
 
 // Pin Assignments
 
@@ -101,6 +104,7 @@ int Cruise_Climb = LOW;
 
 void keyboardPress(char key)
 {
+  bleKeyboard.press(key);
   Keyboard.press(key);
 }
 
@@ -114,6 +118,7 @@ void Button_onRelease(Button &btn, uint16_t duration)
     keyboardPress(Circle_Press_Key);
   if (btn.is(Cancel))
     keyboardPress(Cancel_Press_Key);
+  bleKeyboard.releaseAll();
   Keyboard.releaseAll();
 }
 
@@ -125,6 +130,7 @@ void Button_onHold(Button &btn, uint16_t duration)
     keyboardPress(Triangle_Hold_Key);
   if (btn.is(Circle))
     keyboardPress(Circle_Hold_Key);
+  bleKeyboard.releaseAll();
   Keyboard.releaseAll();
 }
 
@@ -140,6 +146,7 @@ void Joy_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
       keyboardPress(Left_Press_Key);
     if (btn.is(Right))
       keyboardPress(Right_Press_Key);
+    bleKeyboard.releaseAll();
     Keyboard.releaseAll();
   }
   Joy_Active_Counter = Joy_Active_Counter + 1;
@@ -158,7 +165,8 @@ void Joy_onRelease(Button &btn, uint16_t duration)
 }
 
 void SingleClick()
-{ // this function will be called when the Joy center button is pressed 1 time only
+{ // this function will be called when the Joy center button is pressed 1 time only.
+  bleKeyboard.write(KEY_RETURN);
   Keyboard.write(KEY_RETURN);
   Serial.println("SingleClick() detected.");
 } // SingleClick
@@ -167,11 +175,13 @@ void DoubleClick()
 { // this function will be called when the Joy center button was pressed 2 times in a short timeframe.
   if (Cruise_Climb == LOW)
   {
+    bleKeyboard.print("V");
     Keyboard.print("V");
     Serial.println("Vario");
   }
   else
   {
+    bleKeyboard.print("S");
     Keyboard.print("S");
     Serial.println("Speed to fly");
   }
@@ -180,6 +190,7 @@ void DoubleClick()
 
 void HoldCenter()
 { // this function will be called when the Joy center button is held down for 0.5 second or more.
+  bleKeyboard.print("P");
   Keyboard.print("P");
   Serial.println("PAN()");
   HoldCenterTime = millis() - 500; // as set in setPressTicks()
@@ -192,10 +203,12 @@ void Button_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
     if (repeat_count == 1)
     {
       keyboardPress(Cancel_Hold_Key);
+      bleKeyboard.releaseAll();
       Keyboard.releaseAll();
     }
     if (duration > 5000)
     {
+      bleKeyboard.print("E");
       Keyboard.print("E");
       delay(1000);
       ESP.restart(); // ESP32_Restart
@@ -406,12 +419,13 @@ void setup()
   Keyboard.begin();
   USB.begin();
   delay(1000);
-  //Keyboard.write('R');
+  Keyboard.write('R');
   if (digitalRead(Center_Pin) == 0)
     updating_server_start();
   else
   {
-    Serial.println("Starting USB work!");
+    Serial.println("Starting BLE work!");
+    bleKeyboard.begin();
 
     Up.onRelease(Joy_onRelease);
     Down.onRelease(Joy_onRelease);
@@ -450,14 +464,15 @@ void loop()
   }
   else
   {
-    if (1)
+    if (bleKeyboard.isConnected())
     {
       Serial.println("ok");
       if (not bt_first_connected)
       {
         bt_first_connected = true;
-        Serial.println("usb connected");
+        Serial.println("BT connected");
         delay(2000);
+        bleKeyboard.print("C");
       }
       Up.update();
       Down.update();
@@ -468,6 +483,20 @@ void loop()
       Triangle.update();
       Circle.update();
       Cancel.update();
+    }
+    else
+    {
+#ifdef ARDUINO_USB_MODE // if the board is usb enabled, proceed with the command usb
+      Up.update();
+      Down.update();
+      Left.update();
+      Right.update();
+      Center.update();
+      Rectangle.update();
+      Triangle.update();
+      Circle.update();
+      Cancel.update();
+#endif
     }
   }
 }
