@@ -29,15 +29,18 @@ const char Up_Press_Key = KEY_UP_ARROW;
 const char Down_Press_Key = KEY_DOWN_ARROW;
 const char Left_Press_Key = KEY_LEFT_ARROW;
 const char Right_Press_Key = KEY_RIGHT_ARROW;
-const char Rectangle_Press_Key = KEY_F4;
-const char Rectangle_Hold_Key = KEY_F3;
-const char Triangle_Press_Key = KEY_F6;
-const char Triangle_Hold_Key = KEY_F2;
-const char Circle_Press_Key = 'M';
-const char Circle_Hold_Key = KEY_F1;
-const char Cancel_Press_Key = KEY_ESC;
-const char Cancel_Hold_Key = 'T';
+
+const char Rectangle_Press_Key = FSJOYSTICK_DPAD_UP;
+const char Rectangle_Hold_Key = FSJOYSTICK_DPAD_UP_RIGHT;
+const char Triangle_Press_Key = FSJOYSTICK_DPAD_RIGHT;
+const char Triangle_Hold_Key = FSJOYSTICK_DPAD_DOWN_RIGHT;
+const char Circle_Press_Key = FSJOYSTICK_DPAD_DOWN;
+const char Circle_Hold_Key = FSJOYSTICK_DPAD_DOWN_LEFT;
+const char Cancel_Press_Key = FSJOYSTICK_DPAD_LEFT;
+const char Cancel_Hold_Key = FSJOYSTICK_DPAD_UP_LEFT;
+
 const char ret = KEY_RETURN;
+
 const int Joy_Rebounce_Interval = 3;
 const int Joy_Rebounce_Threshold = 20;
 const int Joy_Active_Threshold = 100;
@@ -62,7 +65,13 @@ OneButton buttons(Center_Pin, true);
 
 void keyboardPress(char key)
 {
-    FSJoy.press(key);
+    if (key == Up_Press_Key || key == Down_Press_Key || key == Left_Press_Key || key == Right_Press_Key)
+        FSJoy.press(key);
+    else
+    {
+        FSJoy.dPad(key);
+        FSJoy.write();
+    }
 }
 
 void Button_onRelease(Button &btn, uint16_t duration)
@@ -120,8 +129,8 @@ void Joy_onRelease(Button &btn, uint16_t duration)
 
 void SingleClick()
 { // this function will be called when the Joy center button is pressed 1 time only
-  // FSJoy.press(count);
-    FSJoy.press(KEY_RETURN);
+    FSJoy.dPad(FSJOYSTICK_DPAD_CENTERED);
+    FSJoy.write();
     Serial.println("SingleClick() detected.");
 } // SingleClick
 
@@ -241,6 +250,6 @@ void loop()
     // Functions above only set the values.
     // This writes the report to the host.
     FSJoy.write();
-     */
+*/
     delay(100);
 }
