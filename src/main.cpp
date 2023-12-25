@@ -1,5 +1,4 @@
 #include "USB.h"
-#include "ESP32_flight_stick.h"
 #include "USBHIDKeyboard.h"
 #include <Button.h>
 #include <ButtonEventCallback.h>
@@ -7,7 +6,11 @@
 #include <Bounce2.h>
 #include "OneButton.h"
 
-ESP32_flight_stick FSJoy;
+#include "USBHIDGamepad.h"
+USBHIDGamepad Gamepad;
+
+USBHIDKeyboard Keyboard;
+
 const int buttonCount = 8;
 int Cruise_Climb = LOW;
 // save the millis when a press has started.
@@ -30,14 +33,14 @@ const char Down_Press_Key = KEY_DOWN_ARROW;
 const char Left_Press_Key = KEY_LEFT_ARROW;
 const char Right_Press_Key = KEY_RIGHT_ARROW;
 
-const char Rectangle_Press_Key = FSJOYSTICK_DPAD_UP;
-const char Rectangle_Hold_Key = FSJOYSTICK_DPAD_UP_RIGHT;
-const char Triangle_Press_Key = FSJOYSTICK_DPAD_RIGHT;
-const char Triangle_Hold_Key = FSJOYSTICK_DPAD_DOWN_RIGHT;
-const char Circle_Press_Key = FSJOYSTICK_DPAD_DOWN;
-const char Circle_Hold_Key = FSJOYSTICK_DPAD_DOWN_LEFT;
-const char Cancel_Press_Key = FSJOYSTICK_DPAD_LEFT;
-const char Cancel_Hold_Key = FSJOYSTICK_DPAD_UP_LEFT;
+const char Rectangle_Press_Key = KEY_F4;
+const char Rectangle_Hold_Key = KEY_F3;
+const char Triangle_Press_Key = KEY_F6;
+const char Triangle_Hold_Key = KEY_F2;
+const char Circle_Press_Key = 'M';
+const char Circle_Hold_Key = KEY_F1;
+const char Cancel_Press_Key = KEY_ESC;
+const char Cancel_Hold_Key = 'T';
 
 const char ret = KEY_RETURN;
 
@@ -63,14 +66,45 @@ PushButton Cancel = PushButton(Cancel_Pin);
 // OneButton buttons[buttonCount];
 OneButton buttons(Center_Pin, true);
 
+static uint8_t padID = 0;
 void keyboardPress(char key)
 {
     if (key == Up_Press_Key || key == Down_Press_Key || key == Left_Press_Key || key == Right_Press_Key)
-        FSJoy.press(key);
+    {
+        Serial.print("pressed keyboard key button");
+        Serial.println(key);
+        Keyboard.press(key);
+    }
     else
     {
-        FSJoy.dPad(key);
-        FSJoy.write();
+        Serial.print("pressed coolie hat key button");
+        Serial.println(key);
+        switch (key)
+        {
+        case Rectangle_Press_Key:
+            Gamepad.pressButton(padID);                // Buttons 1 to 32
+            Gamepad.leftStick(padID << 3, padID << 3); // X Axis, Y Axis
+            Gamepad.hat((padID & 0x7) + 1);            // Point of View Hat
+            break;
+        case Circle_Press_Key:
+            Gamepad.pressButton(padID);                    // Buttons 1 to 32
+            Gamepad.rightStick(-(padID << 2), padID << 2); // Z Axis, Z Rotation
+            Gamepad.hat((padID & 0x7) + 1);                // Point of View Hat
+            break;
+        case Cancel_Press_Key:
+            Gamepad.releaseButton(padID);
+            Gamepad.leftTrigger(padID << 4); // X Rotation
+            Gamepad.hat((padID & 0x7) + 1);  // Point of View Hat
+        case Triangle_Press_Key:
+            Gamepad.releaseButton(padID);
+            Gamepad.rightTrigger(-(padID << 4)); // Y Rotation
+            Gamepad.hat((padID & 0x7) + 1);      // Point of View Hat
+            break;
+        default:
+            break;
+        }
+        // Keyboard.dPad(key);
+        // Keyboard.write();
     }
 }
 
@@ -84,7 +118,7 @@ void Button_onRelease(Button &btn, uint16_t duration)
         keyboardPress(Circle_Press_Key);
     if (btn.is(Cancel))
         keyboardPress(Cancel_Press_Key);
-    FSJoy.releaseAll();
+    Keyboard.releaseAll();
 }
 
 void Button_onHold(Button &btn, uint16_t duration)
@@ -95,7 +129,7 @@ void Button_onHold(Button &btn, uint16_t duration)
         keyboardPress(Triangle_Hold_Key);
     if (btn.is(Circle))
         keyboardPress(Circle_Hold_Key);
-    FSJoy.releaseAll();
+    Keyboard.releaseAll();
 }
 
 void Joy_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
@@ -110,7 +144,7 @@ void Joy_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
             keyboardPress(Left_Press_Key);
         if (btn.is(Right))
             keyboardPress(Right_Press_Key);
-        FSJoy.releaseAll();
+        Keyboard.releaseAll();
     }
     Joy_Active_Counter = Joy_Active_Counter + 1;
     if (Joy_Inactive && Joy_Active_Counter > Joy_Active_Threshold)
@@ -129,8 +163,12 @@ void Joy_onRelease(Button &btn, uint16_t duration)
 
 void SingleClick()
 { // this function will be called when the Joy center button is pressed 1 time only
-    FSJoy.dPad(FSJOYSTICK_DPAD_CENTERED);
-    FSJoy.write();
+    Gamepad.releaseButton(padID);
+    Gamepad.leftStick(0, 0);
+    Gamepad.rightStick(0, 0);
+    Gamepad.leftTrigger(0);
+    Gamepad.rightTrigger(0);
+    Gamepad.hat(HAT_CENTER);
     Serial.println("SingleClick() detected.");
 } // SingleClick
 
@@ -138,12 +176,12 @@ void DoubleClick()
 { // this function will be called when the Joy center button was pressed 2 times in a short timeframe.
     if (Cruise_Climb == LOW)
     {
-        FSJoy.press('V');
+        Keyboard.press('V');
         Serial.println("Vario");
     }
     else
     {
-        FSJoy.press('S');
+        Keyboard.press('S');
         Serial.println("Speed to fly");
     }
     Cruise_Climb = !Cruise_Climb; // reverse the Cruise_Climb
@@ -151,7 +189,7 @@ void DoubleClick()
 
 void HoldCenter()
 { // this function will be called when the Joy center button is held down for 0.5 second or more.
-    FSJoy.press('P');
+    Keyboard.press('P');
     Serial.println("PAN()");
     HoldCenterTime = millis() - 500; // as set in setPressTicks()
 } // HoldCenter()
@@ -163,11 +201,11 @@ void Button_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
         if (repeat_count == 1)
         {
             keyboardPress(Cancel_Hold_Key);
-            FSJoy.releaseAll();
+            Keyboard.releaseAll();
         }
         if (duration > 5000)
         {
-            FSJoy.press('E');
+            Keyboard.press('E');
             delay(1000);
             ESP.restart(); // ESP32_Restart
         }
@@ -179,8 +217,8 @@ void setup()
     buttons.attachDoubleClick(DoubleClick);
     buttons.setPressMs(1000); // that is the time when LongHoldCenter is called
     buttons.attachLongPressStart(HoldCenter);
-
-    FSJoy.begin();
+    Gamepad.begin();
+    Keyboard.begin();
     USB.begin();
     pinMode(Up_Pin, INPUT_PULLUP);
     pinMode(Down_Pin, INPUT_PULLUP);
