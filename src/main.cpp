@@ -171,7 +171,4 @@ void loop()
 
     // Update hat switch
     updateHatSwitch();
-
-    // Other loop logic
-    // ...
 }
