@@ -11,9 +11,9 @@ unsigned long SHORT_PRESS_DURATION = 200;
 
 // Define corresponding button IDs
 #define BUTTON_RECTANGLE 1
-#define BUTTON_CIRCLE 3
-#define BUTTON_CANCEL 5
-#define BUTTON_TRIANGLE 7
+#define BUTTON_CIRCLE 2
+#define BUTTON_CANCEL 3
+#define BUTTON_TRIANGLE 4
 #define BUTTON_RECTANGLE_RELEASE 1
 #define BUTTON_CIRCLE_RELEASE 2
 #define BUTTON_CANCEL_RELEASE 3
