@@ -7,11 +7,16 @@ bool buttonPressed = false;
 unsigned long buttonPressStartTime = 0;
 unsigned long LONG_PRESS_DURATION = 1000;
 unsigned long SHORT_PRESS_DURATION = 200;
+
 // Define corresponding button IDs
-#define BUTTON_RECTANGLE 2
-#define BUTTON_CIRCLE 4
+#define BUTTON_RECTANGLE 1
+#define BUTTON_CIRCLE 3
 #define BUTTON_CANCEL 5
-#define BUTTON_TRIANGLE 3
+#define BUTTON_TRIANGLE 7
+#define BUTTON_RECTANGLE_RELEASE 2
+#define BUTTON_CIRCLE_RELEASE 4
+#define BUTTON_CANCEL_RELEASE 6
+#define BUTTON_TRIANGLE_RELEASE 8
 
 const int HAT_UP_PIN = 18;
 const int HAT_LEFT_PIN = 37;
@@ -52,7 +57,8 @@ void handleButtonPress(uint8_t button)
         if (currentMillis - buttonPressStartTime > LONG_PRESS_DURATION)
         {
             // Long press detected, handle accordingly
-            // Example: Gamepad.releaseButton(button); // Release initial press
+            Gamepad.releaseButton(button);
+            Gamepad.pressButton(button + 1); // Release initial press
             // Additional actions for long press
         }
     }
@@ -63,6 +69,7 @@ void handleButtonRelease(uint8_t button)
 {
     buttonPressed = false;
     Gamepad.releaseButton(button);
+    Gamepad.releaseButton(button + 1);
     unsigned long currentMillis = millis();
     if (currentMillis - buttonPressStartTime < SHORT_PRESS_DURATION)
     {
@@ -111,6 +118,7 @@ void updateHatSwitch()
     // Update the hat position in the Gamepad
     Gamepad.hat(hatPosition);
 }
+
 void setup()
 {
     Serial.begin(115200);
