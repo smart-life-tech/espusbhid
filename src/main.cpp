@@ -14,10 +14,10 @@ unsigned long SHORT_PRESS_DURATION = 200;
 #define BUTTON_CIRCLE 3
 #define BUTTON_CANCEL 5
 #define BUTTON_TRIANGLE 7
-#define BUTTON_RECTANGLE_RELEASE 2
-#define BUTTON_CIRCLE_RELEASE 4
-#define BUTTON_CANCEL_RELEASE 6
-#define BUTTON_TRIANGLE_RELEASE 8
+#define BUTTON_RECTANGLE_RELEASE 1
+#define BUTTON_CIRCLE_RELEASE 2
+#define BUTTON_CANCEL_RELEASE 3
+#define BUTTON_TRIANGLE_RELEASE 4
 
 const int HAT_UP_PIN = 18;
 const int HAT_LEFT_PIN = 37;
@@ -63,7 +63,7 @@ void handleButtonPress(uint8_t button)
             {
                 // Long press detected, handle accordingly
                 Gamepad.releaseButton(button);
-                Gamepad.pressButton(button); // Release initial press
+                Gamepad.pressButton(button + 1); // Release initial press
                 doOnce = false;
                 // Additional actions for long press
             }
