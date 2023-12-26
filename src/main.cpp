@@ -1,358 +1,177 @@
+#include <Arduino.h>
 #include "USB.h"
-#include <Button.h>
-#include <ButtonEventCallback.h>
-#include <PushButton.h>
-#include <Bounce2.h>
-#include "OneButton.h"
-
 #include "USBHIDGamepad.h"
 USBHIDGamepad Gamepad;
+// Variables to track button press state and time
+bool buttonPressed = false;
+unsigned long buttonPressStartTime = 0;
+unsigned long LONG_PRESS_DURATION = 1000;
+unsigned long SHORT_PRESS_DURATION = 200;
+// Define corresponding button IDs
+#define BUTTON_RECTANGLE 2
+#define BUTTON_CIRCLE 4
+#define BUTTON_CANCEL 5
+#define BUTTON_TRIANGLE 3
 
-const int buttonCount = 8;
-int Cruise_Climb = LOW;
-// save the millis when a press has started.
-unsigned long HoldCenterTime;
-boolean Joy_Inactive = true;
-int Joy_Active_Counter = 0;
-const int Up_Pin = 18;        // UP         (Joystick Up)
-const int Down_Pin = 38;      // Down       (Joystick Down)
-const int Left_Pin = 37;      // Left       (Joystick Left)
-const int Right_Pin = 39;     // Right      (Joystick Right)
-const int Center_Pin = 15;    // Enter      (Joystick Press)
-const int Rectangle_Pin = 07; // Rectangle  (Button 2)
-const int Triangle_Pin = 01;  // Triangle   (Button 3)
-const int Circle_Pin = 42;    // Circle     (Button 4)
-const int Cancel_Pin = 45;    // X          (Button 5)
+const int HAT_UP_PIN = 18;
+const int HAT_LEFT_PIN = 37;
+const int HAT_DOWN_PIN = 38;
+const int HAT_RIGHT_PIN = 39;
+const int HAT_CENTER_PIN = 15;
+const int Rectangle_Button_Pin = 7; // Rectangle  (Button 2)
+const int Circle_Button_Pin = 42;   // Circle     (Button 4)
+const int Cancel_Button_Pin = 45;   // X          (Button 5)
+const int Triangle_Button_Pin = 1;  // Triangle   (Button 3)
 
-#define KEY_UP_ARROW 0xDA
-#define KEY_DOWN_ARROW 0xD9
-#define KEY_LEFT_ARROW 0xD8
-#define KEY_RIGHT_ARROW 0xD7
-#define KEY_F1 0xC2
-#define KEY_F2 0xC3
-#define KEY_F3 0xC4
-#define KEY_F4 0xC5
-#define KEY_F6 0xC7
-#define KEY_ESC 0xB1
-#define KEY_RETURN 0xB0
-
-// Button's keys
-const char Up_Press_Key = KEY_UP_ARROW;
-const char Down_Press_Key = KEY_DOWN_ARROW;
-const char Left_Press_Key = KEY_LEFT_ARROW;
-const char Right_Press_Key = KEY_RIGHT_ARROW;
-
-// COMBINATION BUTTONS
-const char Left_Down_Press_Key = 'a'; // KEY_LEFT_ARROW & KEY_DOWN_ARROW;
-const char Up_Left_Press_Key = 'b';   // KEY_UP_ARROW & KEY_LEFT_ARROW;
-const char Down_Right_Press_Key = KEY_RIGHT_ARROW & KEY_DOWN_ARROW;
-const char Up_Right_Press_Key = KEY_UP_ARROW & KEY_RIGHT_ARROW;
-
-const char Rectangle_Press_Key = KEY_F4;
-const char Rectangle_Hold_Key = KEY_F3;
-const char Triangle_Press_Key = KEY_F6;
-const char Triangle_Hold_Key = KEY_F2;
-const char Circle_Press_Key = 'M';
-const char Circle_Hold_Key = KEY_F1;
-const char Cancel_Press_Key = KEY_ESC;
-const char Cancel_Hold_Key = 'T';
-
-const char ret = KEY_RETURN;
-
-const int Joy_Rebounce_Interval = 3;
-const int Joy_Rebounce_Threshold = 20;
-const int Joy_Active_Threshold = 100;
-const int Button_Hold_Threshold = 500;
-const int Button_Rebounce_Interval = 500;
-const int Reset_Threshold = 5000;
-const int Joy_Hold_Threshold = 1;
-
-// PushButton's instances
-PushButton Up = PushButton(Up_Pin);
-PushButton Down = PushButton(Down_Pin);
-PushButton Left = PushButton(Left_Pin);
-PushButton Right = PushButton(Right_Pin);
-PushButton Center = PushButton(Center_Pin);
-PushButton Rectangle = PushButton(Rectangle_Pin);
-PushButton Triangle = PushButton(Triangle_Pin);
-PushButton Circle = PushButton(Circle_Pin);
-PushButton Cancel = PushButton(Cancel_Pin);
-
-// OneButton buttons[buttonCount];
-OneButton buttons(Center_Pin, true);
-
-static uint8_t padID = 0;
-void keyboardPress(char key)
+/*
+// Define corresponding hat positions
+#define HAT_UP 0
+#define HAT_UP_LEFT 1
+#define HAT_LEFT 2
+#define HAT_DOWN_LEFT 3
+#define HAT_DOWN 4
+#define HAT_DOWN_RIGHT 5
+#define HAT_RIGHT 6
+#define HAT_UP_RIGHT 7
+#define HAT_CENTER 8
+*/
+// Function to handle button press
+void handleButtonPress(uint8_t button)
 {
-    switch (key)
+    if (!buttonPressed)
     {
-    case Up_Press_Key:
-        Gamepad.hat(HAT_UP);
-        break;
-
-    case Down_Press_Key:
-        // Map Down key to the corresponding action
-        Gamepad.hat(HAT_DOWN);
-        break;
-
-    case Left_Press_Key:
-        // Map Left key to the corresponding action
-        Gamepad.hat(HAT_LEFT);
-        break;
-
-    case Right_Press_Key:
-        // Map Right key to the corresponding action
-        Gamepad.hat(HAT_RIGHT);
-        break;
-
-    // combination button handler
-    case Up_Right_Press_Key:
-        Gamepad.hat(HAT_UP_RIGHT);
-        break;
-    case Down_Right_Press_Key:
-        Gamepad.hat(HAT_DOWN_RIGHT);
-        break;
-    case Up_Left_Press_Key:
-        Gamepad.hat(HAT_UP_LEFT);
-        break;
-    case Left_Down_Press_Key:
-        Gamepad.hat(HAT_DOWN_LEFT);
-        break;
-
-    case Rectangle_Press_Key:
-        // Map Rectangle key to the corresponding action
-        Gamepad.pressButton(BUTTON_X);
-        break;
-
-    case Rectangle_Hold_Key:
-        // Map Rectangle Hold key to the corresponding action
-        Gamepad.pressButton(BUTTON_Y);
-        break;
-
-    case Triangle_Press_Key:
-        // Map Triangle key to the corresponding action
-        Gamepad.pressButton(BUTTON_A);
-        break;
-
-    case Triangle_Hold_Key:
-        // Map Triangle Hold key to the corresponding action
-        Gamepad.pressButton(BUTTON_B);
-        break;
-
-    case Circle_Press_Key:
-        // Map Circle key to the corresponding action
-        Gamepad.pressButton(BUTTON_C);
-        break;
-
-    case Circle_Hold_Key:
-        // Map Circle Hold key to the corresponding action
-        Gamepad.pressButton(BUTTON_Z);
-        break;
-
-    case Cancel_Press_Key:
-        // Map Cancel key to the corresponding action
-        Gamepad.pressButton(BUTTON_START);
-        break;
-
-    case Cancel_Hold_Key:
-        // Map Cancel Hold key to the corresponding action
-        Gamepad.pressButton(BUTTON_SELECT);
-        break;
-
-    case ret:
-        // Map Return key to the corresponding action
-        Gamepad.hat(HAT_CENTER);
-        break;
-
-        // Add more cases for other keys as needed
-
-    default:
-        // Handle any other keys or do nothing
-        break;
-    }
-}
-
-void Button_onRelease(Button &btn, uint16_t duration)
-{
-    if (btn.is(Rectangle))
-        keyboardPress(Rectangle_Press_Key);
-    if (btn.is(Triangle))
-        keyboardPress(Triangle_Press_Key);
-    if (btn.is(Circle))
-        keyboardPress(Circle_Press_Key);
-    if (btn.is(Cancel))
-        keyboardPress(Cancel_Press_Key);
-    // Keyboard.releaseAll();
-}
-
-void Button_onHold(Button &btn, uint16_t duration)
-{
-    if (btn.is(Rectangle))
-        keyboardPress(Rectangle_Hold_Key);
-    if (btn.is(Triangle))
-        keyboardPress(Triangle_Hold_Key);
-    if (btn.is(Circle))
-        keyboardPress(Circle_Hold_Key);
-    // Keyboard.releaseAll();
-}
-
-void Joy_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
-{
-    if (btn.isPressed() && Joy_Active_Counter == 5)
-    {
-        if (btn.is(Up))
-            keyboardPress(Up_Press_Key);
-        if (btn.is(Down))
-            keyboardPress(Down_Press_Key);
-        if (btn.is(Left))
-            keyboardPress(Left_Press_Key);
-        if (btn.is(Right))
-            keyboardPress(Right_Press_Key);
-        // Keyboard.releaseAll();
-    }
-    Joy_Active_Counter = Joy_Active_Counter + 1;
-    if (Joy_Inactive && Joy_Active_Counter > Joy_Active_Threshold)
-    {
-        Joy_Active_Counter = 0;
-        Joy_Inactive = false;
-    }
-    if (!Joy_Inactive && Joy_Active_Counter > Joy_Rebounce_Threshold)
-        Joy_Active_Counter = 0;
-}
-
-void Joy_onRelease(Button &btn, uint16_t duration)
-{
-    Joy_Active_Counter = 0;
-    Joy_Inactive = true;
-}
-
-void SingleClick()
-{ // this function will be called when the Joy center button is pressed 1 time only
-    Gamepad.releaseButton(padID);
-    Gamepad.leftStick(0, 0);
-    Gamepad.rightStick(0, 0);
-    Gamepad.leftTrigger(0);
-    Gamepad.rightTrigger(0);
-    Gamepad.hat(HAT_CENTER);
-    Serial.println("SingleClick() detected.");
-} // SingleClick
-
-void DoubleClick()
-{ // this function will be called when the Joy center button was pressed 2 times in a short timeframe.
-    if (Cruise_Climb == LOW)
-    {
-        // Keyboard.press('V');
-        Serial.println("Vario");
+        // Button was just pressed, record start time
+        buttonPressStartTime = millis();
+        buttonPressed = true;
+        Gamepad.pressButton(button); // Send initial press
     }
     else
     {
-        // Keyboard.press('S');
-        Serial.println("Speed to fly");
-    }
-    Cruise_Climb = !Cruise_Climb; // reverse the Cruise_Climb
-} // DoubleClick
-
-void HoldCenter()
-{ // this function will be called when the Joy center button is held down for 0.5 second or more.
-  // Keyboard.press('P');
-    Serial.println("PAN()");
-    HoldCenterTime = millis() - 500; // as set in setPressTicks()
-} // HoldCenter()
-
-void Button_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
-{ // this function will be called when the Cancel button is held down for a longer time
-    if (btn.is(Cancel))
-    {
-        if (repeat_count == 1)
+        // Button is being held, check for long press
+        unsigned long currentMillis = millis();
+        if (currentMillis - buttonPressStartTime > LONG_PRESS_DURATION)
         {
-            keyboardPress(Cancel_Hold_Key);
-            // Keyboard.releaseAll();
-        }
-        if (duration > 5000)
-        {
-            //  Keyboard.press('E');
-            delay(1000);
-            ESP.restart(); // ESP32_Restart
+            // Long press detected, handle accordingly
+            // Example: Gamepad.releaseButton(button); // Release initial press
+            // Additional actions for long press
         }
     }
 }
 
+// Function to handle button release
+void handleButtonRelease(uint8_t button)
+{
+    buttonPressed = false;
+    Gamepad.releaseButton(button);
+    unsigned long currentMillis = millis();
+    if (currentMillis - buttonPressStartTime < SHORT_PRESS_DURATION)
+    {
+        // Short press detected, handle accordingly
+        // Additional actions for short press
+    }
+}
+void updateHatSwitch()
+{
+    int hatPosition = HAT_CENTER; // Assume the hat is in the center initially
+
+    // Check the combination of button presses for each hat position
+    if (digitalRead(HAT_UP_PIN) == LOW && digitalRead(HAT_LEFT_PIN) == LOW)
+    {
+        hatPosition = HAT_UP_LEFT;
+    }
+    else if (digitalRead(HAT_UP_PIN) == LOW && digitalRead(HAT_RIGHT_PIN) == LOW)
+    {
+        hatPosition = HAT_UP_RIGHT;
+    }
+    else if (digitalRead(HAT_DOWN_PIN) == LOW && digitalRead(HAT_LEFT_PIN) == LOW)
+    {
+        hatPosition = HAT_DOWN_LEFT;
+    }
+    else if (digitalRead(HAT_DOWN_PIN) == LOW && digitalRead(HAT_RIGHT_PIN) == LOW)
+    {
+        hatPosition = HAT_DOWN_RIGHT;
+    }
+    else if (digitalRead(HAT_UP_PIN) == LOW)
+    {
+        hatPosition = HAT_UP;
+    }
+    else if (digitalRead(HAT_LEFT_PIN) == LOW)
+    {
+        hatPosition = HAT_LEFT;
+    }
+    else if (digitalRead(HAT_DOWN_PIN) == LOW)
+    {
+        hatPosition = HAT_DOWN;
+    }
+    else if (digitalRead(HAT_RIGHT_PIN) == LOW)
+    {
+        hatPosition = HAT_RIGHT;
+    }
+
+    // Update the hat position in the Gamepad
+    Gamepad.hat(hatPosition);
+}
 void setup()
 {
-    buttons.attachClick(SingleClick);
-    buttons.attachDoubleClick(DoubleClick);
-    buttons.setPressMs(1000); // that is the time when LongHoldCenter is called
-    buttons.attachLongPressStart(HoldCenter);
-    Gamepad.begin();
-    // Keyboard.begin();
-    USB.begin();
-    pinMode(Up_Pin, INPUT_PULLUP);
-    pinMode(Down_Pin, INPUT_PULLUP);
-    pinMode(Left_Pin, INPUT_PULLUP);
-    pinMode(Right_Pin, INPUT_PULLUP);
-    pinMode(Center_Pin, INPUT_PULLUP);
-    pinMode(Rectangle_Pin, INPUT_PULLUP);
-    pinMode(Triangle_Pin, INPUT_PULLUP);
-    pinMode(Circle_Pin, INPUT_PULLUP);
-    pinMode(Cancel_Pin, INPUT_PULLUP);
-
     Serial.begin(115200);
+    Gamepad.begin();
+    USB.begin();
 
-    // Up.onRelease(Joy_onRelease);
-    // Down.onRelease(Joy_onRelease);
-    // Left.onRelease(Joy_onRelease);
-    // Right.onRelease(Joy_onRelease);
-
-    // Up.onHoldRepeat(Joy_Hold_Threshold, Joy_Rebounce_Interval, Joy_onHoldRepeat);
-    // Down.onHoldRepeat(Joy_Hold_Threshold, Joy_Rebounce_Interval, Joy_onHoldRepeat);
-    // Left.onHoldRepeat(Joy_Hold_Threshold, Joy_Rebounce_Interval, Joy_onHoldRepeat);
-    // Right.onHoldRepeat(Joy_Hold_Threshold, Joy_Rebounce_Interval, Joy_onHoldRepeat);
-
-    Center.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
-    Rectangle.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
-    Triangle.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
-    Circle.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
-    Cancel.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
-
-    Center.onHold(Button_Hold_Threshold, Button_onHold);
-    Rectangle.onHold(Button_Hold_Threshold, Button_onHold);
-    Triangle.onHold(Button_Hold_Threshold, Button_onHold);
-    Circle.onHold(Button_Hold_Threshold, Button_onHold);
-    Cancel.onHoldRepeat(Button_Hold_Threshold, Button_Rebounce_Interval, Button_onHoldRepeat);
-
-    Joy_Active_Counter = 0;
+    // Initialize button pins
+    // Initialize button pins
+    pinMode(HAT_UP_PIN, INPUT_PULLUP);
+    pinMode(HAT_LEFT_PIN, INPUT_PULLUP);
+    pinMode(HAT_DOWN_PIN, INPUT_PULLUP);
+    pinMode(HAT_RIGHT_PIN, INPUT_PULLUP);
+    pinMode(HAT_CENTER_PIN, INPUT_PULLUP);
+    pinMode(Rectangle_Button_Pin, INPUT_PULLUP);
+    pinMode(Circle_Button_Pin, INPUT_PULLUP);
+    pinMode(Cancel_Button_Pin, INPUT_PULLUP);
+    pinMode(Triangle_Button_Pin, INPUT_PULLUP);
 }
 
 void loop()
 {
-    buttons.tick();
-    Up.update();
-    Down.update();
-    Left.update();
-    Right.update();
-    Center.update();
-    Rectangle.update();
-    Triangle.update();
-    Circle.update();
-    Cancel.update();
-    if (Up.isPressed() && Left.isPressed())
+    // Check button state and call corresponding functions
+    if (digitalRead(Rectangle_Button_Pin) == LOW)
     {
-        keyboardPress(Up_Left_Press_Key);
+        handleButtonPress(BUTTON_RECTANGLE);
+    }
+    else
+    {
+        handleButtonRelease(BUTTON_RECTANGLE);
     }
 
-    if (Up.isPressed() && Right.isPressed())
+    if (digitalRead(Circle_Button_Pin) == LOW)
     {
-        keyboardPress(Up_Right_Press_Key);
+        handleButtonPress(BUTTON_CIRCLE);
+    }
+    else
+    {
+        handleButtonRelease(BUTTON_CIRCLE);
     }
 
-    if (Down.isPressed() && Left.isPressed())
+    if (digitalRead(Cancel_Button_Pin) == LOW)
     {
-        keyboardPress(Left_Down_Press_Key);
+        handleButtonPress(BUTTON_CANCEL);
+    }
+    else
+    {
+        handleButtonRelease(BUTTON_CANCEL);
     }
 
-    if (Down.isPressed() && Right.isPressed())
+    if (digitalRead(Triangle_Button_Pin) == LOW)
     {
-        keyboardPress(Down_Right_Press_Key);
+        handleButtonPress(BUTTON_TRIANGLE);
     }
-    delay(100);
+    else
+    {
+        handleButtonRelease(BUTTON_TRIANGLE);
+    }
+
+    // Update hat switch
+    updateHatSwitch();
+
+    // Other loop logic
+    // ...
 }
