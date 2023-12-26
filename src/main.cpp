@@ -63,7 +63,7 @@ void handleButtonPress(uint8_t button)
             {
                 // Long press detected, handle accordingly
                 Gamepad.releaseButton(button);
-                Gamepad.pressButton(button + 1); // Release initial press
+                Gamepad.pressButton(button); // Release initial press
                 doOnce = false;
                 // Additional actions for long press
             }
