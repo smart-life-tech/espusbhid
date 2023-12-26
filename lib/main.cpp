@@ -100,8 +100,6 @@ WebServer server(80);
 // current Cruise_Climb (Joy Center) state, staring with LOW (0)
 int Cruise_Climb = LOW;
 
-
-
 void keyboardPress(char key)
 {
   Keyboard.press(key);
@@ -454,6 +452,7 @@ void loop()
 {
   // keep watching the push button:
   button.tick();
+  button2.tick();
   if (server_running)
   {
     server.handleClient();
