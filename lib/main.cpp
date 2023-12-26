@@ -79,6 +79,7 @@ PushButton Cancel = PushButton(Cancel_Pin);
 // Setup a new OneButton on pin PIN_INPUT
 // The 2. parameter activeLOW is true, because external wiring sets the button to LOW when pressed.
 OneButton button(Center_Pin, true);
+OneButton button2(Cancel_Pin, true);
 
 // save the millis when a press has started.
 unsigned long HoldCenterTime;
@@ -99,11 +100,19 @@ WebServer server(80);
 // current Cruise_Climb (Joy Center) state, staring with LOW (0)
 int Cruise_Climb = LOW;
 
+
+
 void keyboardPress(char key)
 {
   Keyboard.press(key);
 }
 
+void cancelDoubleClick()
+{
+  keyboardPress(KEY_LEFT_ALT);
+  keyboardPress(KEY_TAB);
+  Keyboard.releaseAll();
+}
 void Button_onRelease(Button &btn, uint16_t duration)
 {
   if (btn.is(Rectangle))
@@ -398,6 +407,8 @@ void setup()
 
   // link the xxxclick functions to be called on xxxclick event.
   button.attachClick(SingleClick);
+  button2.attachDoubleClick(cancelDoubleClick);
+
   button.attachDoubleClick(DoubleClick);
   button.setPressMs(1000); // that is the time when LongHoldCenter is called
   button.attachLongPressStart(HoldCenter);

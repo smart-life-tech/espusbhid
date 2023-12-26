@@ -4,6 +4,7 @@
 USBHIDGamepad Gamepad;
 // Variables to track button press state and time
 bool buttonPressed = false;
+bool doOnce = true;
 unsigned long buttonPressStartTime = 0;
 unsigned long LONG_PRESS_DURATION = 1000;
 unsigned long SHORT_PRESS_DURATION = 200;
@@ -48,6 +49,7 @@ void handleButtonPress(uint8_t button)
         // Button was just pressed, record start time
         buttonPressStartTime = millis();
         buttonPressed = true;
+        doOnce = true;
         Gamepad.pressButton(button); // Send initial press
     }
     else
@@ -56,10 +58,15 @@ void handleButtonPress(uint8_t button)
         unsigned long currentMillis = millis();
         if (currentMillis - buttonPressStartTime > LONG_PRESS_DURATION)
         {
-            // Long press detected, handle accordingly
-            Gamepad.releaseButton(button);
-            Gamepad.pressButton(button + 1); // Release initial press
-            // Additional actions for long press
+
+            if (doOnce)
+            {
+                // Long press detected, handle accordingly
+                Gamepad.releaseButton(button);
+                Gamepad.pressButton(button + 1); // Release initial press
+                doOnce = false;
+                // Additional actions for long press
+            }
         }
     }
 }
