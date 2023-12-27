@@ -31,15 +31,15 @@ const int Triangle_Button_Pin = 1;  // Triangle   (Button 3)
 
 /*
 // Define corresponding hat positions
-#define HAT_UP 0
-#define HAT_UP_LEFT 1
-#define HAT_LEFT 2
-#define HAT_DOWN_LEFT 3
-#define HAT_DOWN 4
-#define HAT_DOWN_RIGHT 5
-#define HAT_RIGHT 6
-#define HAT_UP_RIGHT 7
-#define HAT_CENTER 8
+#define HAT_CENTER     0
+#define HAT_UP         1
+#define HAT_UP_RIGHT   2
+#define HAT_RIGHT      3
+#define HAT_DOWN_RIGHT 4
+#define HAT_DOWN       5
+#define HAT_DOWN_LEFT  6
+#define HAT_LEFT       7
+#define HAT_UP_LEFT    8
 */
 // Function to handle button press
 void handleButtonPress(uint8_t button)
