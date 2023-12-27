@@ -124,6 +124,7 @@ void updateHatSwitch()
      else if (digitalRead(HAT_CENTER_PIN) == LOW)
     {
         hatPosition = HAT_CENTER;
+        Serial.println("CENTER button is pressed" );
     }
 
     // Update the hat position in the Gamepad
