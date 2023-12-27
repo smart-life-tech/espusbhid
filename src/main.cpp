@@ -86,7 +86,7 @@ void handleButtonRelease(uint8_t button)
 }
 void updateHatSwitch()
 {
-    int hatPosition = HAT_CENTER; // Assume the hat is in the center initially
+    int hatPosition = HAT_CENTERs; // Assume the hat is in the center initially
 
     // Check the combination of button presses for each hat position
     if (digitalRead(HAT_UP_PIN) == LOW && digitalRead(HAT_LEFT_PIN) == LOW)
