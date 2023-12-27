@@ -121,6 +121,10 @@ void updateHatSwitch()
     {
         hatPosition = HAT_RIGHT;
     }
+     else if (digitalRead(HAT_CENTER_PIN) == LOW)
+    {
+        hatPosition = HAT_CENTER;
+    }
 
     // Update the hat position in the Gamepad
     Gamepad.hat(hatPosition);
