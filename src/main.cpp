@@ -62,7 +62,7 @@ void handleButtonPress(uint8_t button)
             if (doOnce)
             {
                 // Long press detected, handle accordingly
-                //Gamepad.releaseButton(button);
+                // Gamepad.releaseButton(button);
                 Gamepad.pressButton(button); // Release initial press
                 doOnce = false;
                 // Additional actions for long press
@@ -76,7 +76,7 @@ void handleButtonRelease(uint8_t button)
 {
     buttonPressed = false;
     Gamepad.releaseButton(button);
-   // Gamepad.releaseButton(button + 1);
+    // Gamepad.releaseButton(button + 1);
     unsigned long currentMillis = millis();
     if (currentMillis - buttonPressStartTime < SHORT_PRESS_DURATION)
     {
@@ -121,10 +121,14 @@ void updateHatSwitch()
     {
         hatPosition = HAT_RIGHT;
     }
-     else if (digitalRead(HAT_CENTER_PIN) == LOW)
+    else if (digitalRead(HAT_CENTER_PIN) == LOW)
     {
         hatPosition = HAT_CENTER;
-        Serial.println("CENTER button is pressed" );
+        Gamepad.leftStick(0, 0);
+        Gamepad.rightStick(0, 0);
+        Gamepad.leftTrigger(0);
+        Gamepad.rightTrigger(0);
+        Serial.println("CENTER button is pressed");
     }
 
     // Update the hat position in the Gamepad
