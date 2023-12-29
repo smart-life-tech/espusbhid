@@ -3,6 +3,7 @@
 #include "USBHIDGamepad.h"
 USBHIDGamepad Gamepad;
 // Variables to track button press state and time
+int hatPosition ; // Assume the hat is in the center initially
 bool buttonPressed = false;
 bool doOnce = true;
 unsigned long buttonPressStartTime = 0;
@@ -28,7 +29,7 @@ const int Rectangle_Button_Pin = 7; // Rectangle  (Button 2)
 const int Circle_Button_Pin = 42;   // Circle     (Button 4)
 const int Cancel_Button_Pin = 45;   // X          (Button 5)
 const int Triangle_Button_Pin = 1;  // Triangle   (Button 3)
-#define HAT_CENTERs 0
+#define HAT_CENTERs 8
 /*
 // Define corresponding hat positions
 
@@ -86,7 +87,6 @@ void handleButtonRelease(uint8_t button)
 }
 void updateHatSwitch()
 {
-    int hatPosition = HAT_CENTERs; // Assume the hat is in the center initially
 
     // Check the combination of button presses for each hat position
     if (digitalRead(HAT_UP_PIN) == LOW && digitalRead(HAT_LEFT_PIN) == LOW)
