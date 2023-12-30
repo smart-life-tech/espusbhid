@@ -3,7 +3,7 @@
 #include "USBHIDGamepad.h"
 USBHIDGamepad Gamepad;
 // Variables to track button press state and time
-int hatPosition ; // Assume the hat is in the center initially
+int hatPosition; // Assume the hat is in the center initially
 bool buttonPressed = false;
 bool doOnce = true;
 unsigned long buttonPressStartTime = 0;
@@ -85,6 +85,12 @@ void handleButtonRelease(uint8_t button)
         // Additional actions for short press
     }
 }
+
+/**
+ * Updates the hat position in the Gamepad based on the combination of button presses for each hat position.
+ *
+ * @throws None
+ */
 void updateHatSwitch()
 {
 
@@ -92,34 +98,50 @@ void updateHatSwitch()
     if (digitalRead(HAT_UP_PIN) == LOW && digitalRead(HAT_LEFT_PIN) == LOW)
     {
         hatPosition = HAT_UP_LEFT;
+        // Update the hat position in the Gamepad
+        Gamepad.hat(hatPosition);
     }
     else if (digitalRead(HAT_UP_PIN) == LOW && digitalRead(HAT_RIGHT_PIN) == LOW)
     {
         hatPosition = HAT_UP_RIGHT;
+        // Update the hat position in the Gamepad
+        Gamepad.hat(hatPosition);
     }
     else if (digitalRead(HAT_DOWN_PIN) == LOW && digitalRead(HAT_LEFT_PIN) == LOW)
     {
         hatPosition = HAT_DOWN_LEFT;
+        // Update the hat position in the Gamepad
+        Gamepad.hat(hatPosition);
     }
     else if (digitalRead(HAT_DOWN_PIN) == LOW && digitalRead(HAT_RIGHT_PIN) == LOW)
     {
         hatPosition = HAT_DOWN_RIGHT;
+        // Update the hat position in the Gamepad
+        Gamepad.hat(hatPosition);
     }
     else if (digitalRead(HAT_UP_PIN) == LOW)
     {
         hatPosition = HAT_UP;
+        // Update the hat position in the Gamepad
+        Gamepad.hat(hatPosition);
     }
     else if (digitalRead(HAT_LEFT_PIN) == LOW)
     {
         hatPosition = HAT_LEFT;
+        // Update the hat position in the Gamepad
+        Gamepad.hat(hatPosition);
     }
     else if (digitalRead(HAT_DOWN_PIN) == LOW)
     {
         hatPosition = HAT_DOWN;
+        // Update the hat position in the Gamepad
+        Gamepad.hat(hatPosition);
     }
     else if (digitalRead(HAT_RIGHT_PIN) == LOW)
     {
         hatPosition = HAT_RIGHT;
+        // Update the hat position in the Gamepad
+        Gamepad.hat(hatPosition);
     }
     else if (digitalRead(HAT_CENTER_PIN) == LOW)
     {
@@ -130,10 +152,9 @@ void updateHatSwitch()
         Gamepad.rightTrigger(0);
         Gamepad.send(0, 0, 0, 0, 0, 0, 0, 0);
         Serial.println("CENTER button is pressed");
+        // Update the hat position in the Gamepad
+        Gamepad.hat(hatPosition);
     }
-
-    // Update the hat position in the Gamepad
-    Gamepad.hat(hatPosition);
 }
 
 void setup()
@@ -155,6 +176,11 @@ void setup()
     pinMode(Triangle_Button_Pin, INPUT_PULLUP);
 }
 
+/**
+ * Checks button state and calls corresponding functions.
+ *
+ * @return void
+ */
 void loop()
 {
     // Check button state and call corresponding functions
