@@ -1,4 +1,4 @@
-// #include <NimBLEDevice.h>
+#include <NimBLEDevice.h>
 // #include "NimBLEDevice.h"
 
 // Changelog:
@@ -18,8 +18,8 @@
 #define USE_NIMBLE
 #include <BluetoothSerial.h>
 #include <BleKeyboard.h>
-#include <USBHID.h>
-// Updating server
+// #include <USBHID.h>
+//  Updating server
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WebServer.h>
@@ -28,7 +28,7 @@
 #include "OneButton.h"
 
 // Version
-#define VERSION "2.3.2"
+#define VERSION  "3.0_BLE"
 
 // Init BLE
 BleKeyboard bleKeyboard("XCREMOTE", "XCNAV UG", 100);
@@ -83,7 +83,7 @@ PushButton Cancel = PushButton(Cancel_Pin);
 // Setup a new OneButton on pin PIN_INPUT
 // The 2. parameter activeLOW is true, because external wiring sets the button to LOW when pressed.
 OneButton button(Center_Pin, true);
-
+OneButton button2(Cancel_Pin, true);
 // save the millis when a press has started.
 unsigned long HoldCenterTime;
 
@@ -106,7 +106,12 @@ void keyboardPress(char key)
 {
   bleKeyboard.press(key);
 }
-
+void cancelDoubleClick()
+{
+  keyboardPress(KEY_LEFT_ALT);
+  keyboardPress(KEY_TAB);
+  bleKeyboard.releaseAll();
+}
 void Button_onRelease(Button &btn, uint16_t duration)
 {
   if (btn.is(Rectangle))
@@ -403,9 +408,9 @@ void setup()
   // link the xxxclick functions to be called on xxxclick event.
   button.attachClick(SingleClick);
   button.attachDoubleClick(DoubleClick);
-  button.setPressTicks(1000); // that is the time when LongHoldCenter is called
+  button.setPressMs(1000); // that is the time when LongHoldCenter is called
   button.attachLongPressStart(HoldCenter);
-
+  button2.attachDoubleClick(cancelDoubleClick);
   // pinMode(LED_Pin, OUTPUT);
 
   if (digitalRead(Center_Pin) == 0)
