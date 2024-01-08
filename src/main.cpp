@@ -1,4 +1,4 @@
-// #include <NimBLEDevice.h>
+ #include <NimBLEDevice.h>
 // #include "NimBLEDevice.h"
 
 // Changelog:
@@ -15,10 +15,10 @@
 #include <ButtonEventCallback.h>
 #include <PushButton.h>
 #include <Bounce2.h>
-#define USE_NIMBLE
+
 #include <BluetoothSerial.h>
 #include <BleKeyboard.h>
-#include <USBHID.h>
+//#include <USBHID.h>
 // Updating server
 #include <WiFi.h>
 #include <WiFiClient.h>
@@ -28,7 +28,8 @@
 #include "OneButton.h"
 
 // Version
-#define VERSION "2.3.2"
+#define VERSION "3.0_BLE"
+#define USE_NIMBLE
 
 // Init BLE
 BleKeyboard bleKeyboard("XCREMOTE", "XCNAV UG", 100);
@@ -105,6 +106,13 @@ int Cruise_Climb = LOW;
 void keyboardPress(char key)
 {
   bleKeyboard.press(key);
+}
+
+void cancelDoubleClick()
+{
+  keyboardPress(KEY_LEFT_ALT);
+  keyboardPress(KEY_TAB);
+  bleKeyboard.releaseAll();
 }
 
 void Button_onRelease(Button &btn, uint16_t duration)
