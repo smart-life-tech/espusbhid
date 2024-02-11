@@ -1,34 +1,37 @@
+#include <NimBLEDevice.h>
+// #include "NimBLEDevice.h"
+
 // Changelog:
-// XCREMOTE USB Version
-// Double Klick "X" Opens running App overview
+// made center doubleklick toggle between STF/Vario (toggle sending S/V)
+//  Reset XCREMOTE with 5sec X-Hold added
+// New BLEKeyboard Library keeps BLE Advertising when disconnected
 
 // uses libraries from
 // https://github.com/r89m/PushButton
 // https://github.com/r89m/Button
 // https://github.com/thomasfredericks/Bounce2
-// #define CONFIG_TINYUSB_HID_ENABLED 1
 
 #include <Button.h>
 #include <ButtonEventCallback.h>
 #include <PushButton.h>
 #include <Bounce2.h>
-
+#define USE_NIMBLE
+#include <BluetoothSerial.h>
+#include <BleKeyboard.h>
+// #include <USBHID.h>
 //  Updating server
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <Update.h>
-#include <WiFiUdp.h>
-#include <ArduinoOTA.h>
-// usb buttons funtionality
 #include "OneButton.h"
-#include "USB.h"
-#include "USBHIDKeyboard.h"
-// Version
-#define VERSION "3.0_USB"
 
-USBHIDKeyboard Keyboard;
+// Version
+#define VERSION  "3.0_BLE"
+
+// Init BLE
+BleKeyboard bleKeyboard("XCREMOTE", "XCNAV UG", 100);
 
 // Pin Assignments
 
@@ -81,7 +84,6 @@ PushButton Cancel = PushButton(Cancel_Pin);
 // The 2. parameter activeLOW is true, because external wiring sets the button to LOW when pressed.
 OneButton button(Center_Pin, true);
 OneButton button2(Cancel_Pin, true);
-
 // save the millis when a press has started.
 unsigned long HoldCenterTime;
 
@@ -100,115 +102,114 @@ WebServer server(80);
 
 // current Cruise_Climb (Joy Center) state, staring with LOW (0)
 int Cruise_Climb = LOW;
-
 void keyboardPress(char key)
 {
-    Keyboard.press(key);
+  bleKeyboard.press(key);
 }
-
 void cancelDoubleClick()
 {
-    keyboardPress(KEY_LEFT_ALT);
-    keyboardPress(KEY_TAB);
-    Keyboard.releaseAll();
+  keyboardPress(KEY_LEFT_ALT);
+  keyboardPress(KEY_TAB);
+  bleKeyboard.releaseAll();
 }
 void Button_onRelease(Button &btn, uint16_t duration)
 {
-    if (btn.is(Rectangle))
-        keyboardPress(Rectangle_Press_Key);
-    if (btn.is(Triangle))
-        keyboardPress(Triangle_Press_Key);
-    if (btn.is(Circle))
-        keyboardPress(Circle_Press_Key);
-    if (btn.is(Cancel))
-        keyboardPress(Cancel_Press_Key);
-    Keyboard.releaseAll();
+  if (btn.is(Rectangle))
+    keyboardPress(Rectangle_Press_Key);
+  if (btn.is(Triangle))
+    keyboardPress(Triangle_Press_Key);
+  if (btn.is(Circle))
+    keyboardPress(Circle_Press_Key);
+  if (btn.is(Cancel))
+    keyboardPress(Cancel_Press_Key);
+  bleKeyboard.releaseAll();
 }
 
 void Button_onHold(Button &btn, uint16_t duration)
 {
-    if (btn.is(Rectangle))
-        keyboardPress(Rectangle_Hold_Key);
-    if (btn.is(Triangle))
-        keyboardPress(Triangle_Hold_Key);
-    if (btn.is(Circle))
-        keyboardPress(Circle_Hold_Key);
-    Keyboard.releaseAll();
+  if (btn.is(Rectangle))
+    keyboardPress(Rectangle_Hold_Key);
+  if (btn.is(Triangle))
+    keyboardPress(Triangle_Hold_Key);
+  if (btn.is(Circle))
+    keyboardPress(Circle_Hold_Key);
+  bleKeyboard.releaseAll();
 }
 
 void Joy_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
 {
-    if (btn.isPressed() && Joy_Active_Counter == 5)
-    {
-        if (btn.is(Up))
-            keyboardPress(Up_Press_Key);
-        if (btn.is(Down))
-            keyboardPress(Down_Press_Key);
-        if (btn.is(Left))
-            keyboardPress(Left_Press_Key);
-        if (btn.is(Right))
-            keyboardPress(Right_Press_Key);
-        Keyboard.releaseAll();
-    }
-    Joy_Active_Counter = Joy_Active_Counter + 1;
-    if (Joy_Inactive && Joy_Active_Counter > Joy_Active_Threshold)
-    {
-        Joy_Active_Counter = 0;
-        Joy_Inactive = false;
-    }
-    if (!Joy_Inactive && Joy_Active_Counter > Joy_Rebounce_Threshold)
-        Joy_Active_Counter = 0;
+  if (btn.isPressed() && Joy_Active_Counter == 5)
+  {
+    if (btn.is(Up))
+      keyboardPress(Up_Press_Key);
+    if (btn.is(Down))
+      keyboardPress(Down_Press_Key);
+    if (btn.is(Left))
+      keyboardPress(Left_Press_Key);
+    if (btn.is(Right))
+      keyboardPress(Right_Press_Key);
+    bleKeyboard.releaseAll();
+  }
+  Joy_Active_Counter = Joy_Active_Counter + 1;
+  if (Joy_Inactive && Joy_Active_Counter > Joy_Active_Threshold)
+  {
+    Joy_Active_Counter = 0;
+    Joy_Inactive = false;
+  }
+  if (!Joy_Inactive && Joy_Active_Counter > Joy_Rebounce_Threshold)
+    Joy_Active_Counter = 0;
 }
+
 void Joy_onRelease(Button &btn, uint16_t duration)
 {
-    Joy_Active_Counter = 0;
-    Joy_Inactive = true;
+  Joy_Active_Counter = 0;
+  Joy_Inactive = true;
 }
 
 void SingleClick()
-{ // this function will be called when the Joy center button is pressed 1 time only
-    Keyboard.write(KEY_RETURN);
-    Serial.println("SingleClick() detected.");
+{ // this function will be called when the Joy center button is pressed 1 time only.
+  bleKeyboard.write(KEY_RETURN);
+  Serial.println("SingleClick() detected.");
 } // SingleClick
 
 void DoubleClick()
 { // this function will be called when the Joy center button was pressed 2 times in a short timeframe.
-    if (Cruise_Climb == LOW)
-    {
-        Keyboard.print("V");
-        Serial.println("Vario");
-    }
-    else
-    {
-        Keyboard.print("S");
-        Serial.println("Speed to fly");
-    }
-    Cruise_Climb = !Cruise_Climb; // reverse the Cruise_Climb
+  if (Cruise_Climb == LOW)
+  {
+    bleKeyboard.print("V");
+    Serial.println("Vario");
+  }
+  else
+  {
+    bleKeyboard.print("S");
+    Serial.println("Speed to fly");
+  }
+  Cruise_Climb = !Cruise_Climb; // reverse the Cruise_Climb
 } // DoubleClick
 
 void HoldCenter()
 { // this function will be called when the Joy center button is held down for 0.5 second or more.
-    Keyboard.print("P");
-    Serial.println("PAN()");
-    HoldCenterTime = millis() - 500; // as set in setPressTicks()
+  bleKeyboard.print("P");
+  Serial.println("PAN()");
+  HoldCenterTime = millis() - 500; // as set in setPressTicks()
 } // HoldCenter()
 
 void Button_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
 { // this function will be called when the Cancel button is held down for a longer time
-    if (btn.is(Cancel))
+  if (btn.is(Cancel))
+  {
+    if (repeat_count == 1)
     {
-        if (repeat_count == 1)
-        {
-            keyboardPress(Cancel_Hold_Key);
-            Keyboard.releaseAll();
-        }
-        if (duration > 5000)
-        {
-            Keyboard.print("E");
-            delay(1000);
-            ESP.restart(); // ESP32_Restart
-        }
+      keyboardPress(Cancel_Hold_Key);
+      bleKeyboard.releaseAll();
     }
+    if (duration > 5000)
+    {
+      bleKeyboard.print("E");
+      delay(1000);
+      ESP.restart(); // ESP32_Restart
+    }
+  }
 }
 
 /*
@@ -300,85 +301,85 @@ const char *serverIndex =
 // Callback for the embedded jquery.min.js page
 void onJavaScript(void)
 {
-    Serial.println("onJavaScript(void)");
-    server.setContentLength(jquery_min_js_v3_2_1_gz_len);
-    server.sendHeader(F("Content-Encoding"), F("gzip"));
-    server.send_P(200, "text/javascript", jquery_min_js_v3_2_1_gz, jquery_min_js_v3_2_1_gz_len);
+  Serial.println("onJavaScript(void)");
+  server.setContentLength(jquery_min_js_v3_2_1_gz_len);
+  server.sendHeader(F("Content-Encoding"), F("gzip"));
+  server.send_P(200, "text/javascript", jquery_min_js_v3_2_1_gz, jquery_min_js_v3_2_1_gz_len);
 }
 
 void updating_server_start(void)
 {
-    server_running = 1;
+  server_running = 1;
 
-    // Connect to WiFi network
-    // WiFi.begin(ssid, password);
-    WiFi.softAP(ssid, password);
-    Serial.println("");
+  // Connect to WiFi network
+  // WiFi.begin(ssid, password);
+  WiFi.softAP(ssid, password);
+  Serial.println("");
 
-    Serial.print("Created wifi AP: ");
-    Serial.println(ssid);
-    Serial.print("IP address: ");
-    Serial.println(WiFi.softAPIP());
+  Serial.print("Created wifi AP: ");
+  Serial.println(ssid);
+  Serial.print("IP address: ");
+  Serial.println(WiFi.softAPIP());
 
-    /*use mdns for host name resolution*/
-    if (!MDNS.begin(host))
-    { // http://esp32.local
-        Serial.println("Error setting up MDNS responder!");
-        while (1)
-        {
-            delay(1000);
-        }
+  /*use mdns for host name resolution*/
+  if (!MDNS.begin(host))
+  { // http://esp32.local
+    Serial.println("Error setting up MDNS responder!");
+    while (1)
+    {
+      delay(1000);
     }
-    Serial.println("mDNS responder started");
+  }
+  Serial.println("mDNS responder started");
 
-    /*return javascript jquery */
-    server.on("/jquery.min.js", HTTP_GET, onJavaScript);
+  /*return javascript jquery */
+  server.on("/jquery.min.js", HTTP_GET, onJavaScript);
 
-    /*return index page which is stored in serverIndex */
-    server.on("/", HTTP_GET, []()
-              {
+  /*return index page which is stored in serverIndex */
+  server.on("/", HTTP_GET, []()
+            {
     server.sendHeader("Connection", "close");
     server.send(200, "text/html", serverIndex); });
 
-    /*handling uploading firmware file */
-    server.on(
-        "/update", HTTP_POST, []()
-        {
+  /*handling uploading firmware file */
+  server.on(
+      "/update", HTTP_POST, []()
+      {
     server.sendHeader("Connection", "close");
     server.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
     ESP.restart(); },
-        []()
+      []()
+      {
+        HTTPUpload &upload = server.upload();
+        if (upload.status == UPLOAD_FILE_START)
         {
-            HTTPUpload &upload = server.upload();
-            if (upload.status == UPLOAD_FILE_START)
-            {
-                Serial.printf("Update: %s\n", upload.filename.c_str());
-                if (!Update.begin(UPDATE_SIZE_UNKNOWN))
-                { // start with max available size
-                    Update.printError(Serial);
-                }
-            }
-            else if (upload.status == UPLOAD_FILE_WRITE)
-            {
-                /* flashing firmware to ESP*/
-                if (Update.write(upload.buf, upload.currentSize) != upload.currentSize)
-                {
-                    Update.printError(Serial);
-                }
-            }
-            else if (upload.status == UPLOAD_FILE_END)
-            {
-                if (Update.end(true))
-                { // true to set the size to the current progress
-                    Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
-                }
-                else
-                {
-                    Update.printError(Serial);
-                }
-            }
-        });
-    server.begin();
+          Serial.printf("Update: %s\n", upload.filename.c_str());
+          if (!Update.begin(UPDATE_SIZE_UNKNOWN))
+          { // start with max available size
+            Update.printError(Serial);
+          }
+        }
+        else if (upload.status == UPLOAD_FILE_WRITE)
+        {
+          /* flashing firmware to ESP*/
+          if (Update.write(upload.buf, upload.currentSize) != upload.currentSize)
+          {
+            Update.printError(Serial);
+          }
+        }
+        else if (upload.status == UPLOAD_FILE_END)
+        {
+          if (Update.end(true))
+          { // true to set the size to the current progress
+            Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+          }
+          else
+          {
+            Update.printError(Serial);
+          }
+        }
+      });
+  server.begin();
 }
 
 /*
@@ -389,110 +390,92 @@ void updating_server_start(void)
 void setup()
 {
 
-    pinMode(Up_Pin, INPUT_PULLUP);
-    pinMode(Down_Pin, INPUT_PULLUP);
-    pinMode(Left_Pin, INPUT_PULLUP);
-    pinMode(Right_Pin, INPUT_PULLUP);
-    pinMode(Center_Pin, INPUT_PULLUP);
-    pinMode(Rectangle_Pin, INPUT_PULLUP);
-    pinMode(Triangle_Pin, INPUT_PULLUP);
-    pinMode(Circle_Pin, INPUT_PULLUP);
-    pinMode(Cancel_Pin, INPUT_PULLUP);
+  pinMode(Up_Pin, INPUT_PULLUP);
+  pinMode(Down_Pin, INPUT_PULLUP);
+  pinMode(Left_Pin, INPUT_PULLUP);
+  pinMode(Right_Pin, INPUT_PULLUP);
+  pinMode(Center_Pin, INPUT_PULLUP);
+  pinMode(Rectangle_Pin, INPUT_PULLUP);
+  pinMode(Triangle_Pin, INPUT_PULLUP);
+  pinMode(Circle_Pin, INPUT_PULLUP);
+  pinMode(Cancel_Pin, INPUT_PULLUP);
 
-    Serial.begin(115200);
-    Serial.println("Version: " VERSION);
-    Serial.print("XCRemote MAC Address:  ");
-    Serial.println(WiFi.macAddress());
+  Serial.begin(115200);
+  Serial.println("Version: " VERSION);
+  Serial.print("XCRemote MAC Address:  ");
+  Serial.println(WiFi.macAddress());
 
-    // link the xxxclick functions to be called on xxxclick event.
-    button.attachClick(SingleClick);
-    button2.attachDoubleClick(cancelDoubleClick);
+  // link the xxxclick functions to be called on xxxclick event.
+  button.attachClick(SingleClick);
+  button.attachDoubleClick(DoubleClick);
+  button.setPressMs(1000); // that is the time when LongHoldCenter is called
+  button.attachLongPressStart(HoldCenter);
+  button2.attachDoubleClick(cancelDoubleClick);
+  // pinMode(LED_Pin, OUTPUT);
 
-    button.attachDoubleClick(DoubleClick);
-    button.setPressMs(1000); // that is the time when LongHoldCenter is called
-    button.attachLongPressStart(HoldCenter);
+  if (digitalRead(Center_Pin) == 0)
+    updating_server_start();
+  else
+  {
+    Serial.println("Starting BLE work!");
+    bleKeyboard.begin();
 
-    // pinMode(LED_Pin, OUTPUT);
-    Keyboard.begin();
-    USB.begin();
-    // starting ota process
-    Serial.println(WiFi.localIP());
+    Up.onRelease(Joy_onRelease);
+    Down.onRelease(Joy_onRelease);
+    Left.onRelease(Joy_onRelease);
+    Right.onRelease(Joy_onRelease);
 
-    ArduinoOTA.begin();
+    Up.onHoldRepeat(Joy_Hold_Threshold, Joy_Rebounce_Interval, Joy_onHoldRepeat);
+    Down.onHoldRepeat(Joy_Hold_Threshold, Joy_Rebounce_Interval, Joy_onHoldRepeat);
+    Left.onHoldRepeat(Joy_Hold_Threshold, Joy_Rebounce_Interval, Joy_onHoldRepeat);
+    Right.onHoldRepeat(Joy_Hold_Threshold, Joy_Rebounce_Interval, Joy_onHoldRepeat);
 
-    Serial.println("Ready for OTA updates");
-    Serial.print("OTA Hostname: ");
-    Serial.println(ArduinoOTA.getHostname());
+    Center.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
+    Rectangle.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
+    Triangle.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
+    Circle.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
+    Cancel.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
 
-    delay(1000);
-    // Keyboard.write('R');
-    if (digitalRead(Center_Pin) == 0)
-    {
-        ArduinoOTA.begin();
-        ArduinoOTA.setPassword(password);
-        // updating_server_start();
-    }
-    else
-    {
-        Serial.println("Starting USB work!");
+    Center.onHold(Button_Hold_Threshold, Button_onHold);
+    Rectangle.onHold(Button_Hold_Threshold, Button_onHold);
+    Triangle.onHold(Button_Hold_Threshold, Button_onHold);
+    Circle.onHold(Button_Hold_Threshold, Button_onHold);
+    Cancel.onHoldRepeat(Button_Hold_Threshold, Button_Rebounce_Interval, Button_onHoldRepeat);
 
-        Up.onRelease(Joy_onRelease);
-        Down.onRelease(Joy_onRelease);
-        Left.onRelease(Joy_onRelease);
-        Right.onRelease(Joy_onRelease);
-
-        Up.onHoldRepeat(Joy_Hold_Threshold, Joy_Rebounce_Interval, Joy_onHoldRepeat);
-        Down.onHoldRepeat(Joy_Hold_Threshold, Joy_Rebounce_Interval, Joy_onHoldRepeat);
-        Left.onHoldRepeat(Joy_Hold_Threshold, Joy_Rebounce_Interval, Joy_onHoldRepeat);
-        Right.onHoldRepeat(Joy_Hold_Threshold, Joy_Rebounce_Interval, Joy_onHoldRepeat);
-
-        Center.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
-        Rectangle.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
-        Triangle.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
-        Circle.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
-        Cancel.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
-
-        Center.onHold(Button_Hold_Threshold, Button_onHold);
-        Rectangle.onHold(Button_Hold_Threshold, Button_onHold);
-        Triangle.onHold(Button_Hold_Threshold, Button_onHold);
-        Circle.onHold(Button_Hold_Threshold, Button_onHold);
-        Cancel.onHoldRepeat(Button_Hold_Threshold, Button_Rebounce_Interval, Button_onHoldRepeat);
-
-        Joy_Active_Counter = 0;
-    }
+    Joy_Active_Counter = 0;
+  }
 }
 
 void loop()
 {
-    ArduinoOTA.handle();
-    // keep watching the push button:
-    button.tick();
-    button2.tick();
-    if (server_running)
+  // keep watching the push button:
+  button.tick();
+  if (server_running)
+  {
+    server.handleClient();
+    delay(1);
+  }
+  else
+  {
+    if (bleKeyboard.isConnected())
     {
-        server.handleClient();
-        delay(1);
+      Serial.println("ok");
+      if (not bt_first_connected)
+      {
+        bt_first_connected = true;
+        Serial.println("BT connected");
+        delay(2000);
+        bleKeyboard.print("C");
+      }
+      Up.update();
+      Down.update();
+      Left.update();
+      Right.update();
+      Center.update();
+      Rectangle.update();
+      Triangle.update();
+      Circle.update();
+      Cancel.update();
     }
-    else
-    {
-        if (1)
-        {
-            Serial.println("ok");
-            if (not bt_first_connected)
-            {
-                bt_first_connected = true;
-                Serial.println("usb connected");
-                delay(2000);
-            }
-            Up.update();
-            Down.update();
-            Left.update();
-            Right.update();
-            Center.update();
-            Rectangle.update();
-            Triangle.update();
-            Circle.update();
-            Cancel.update();
-        }
-    }
+  }
 }
