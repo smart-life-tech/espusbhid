@@ -405,11 +405,17 @@ void setup()
 
     // ArduinoOTA.begin();
 
-    delay(1000);
+    delay(2000);
     // Keyboard.write('R');
     if (digitalRead(Center_Pin) == 0)
     {
-
+        WiFi.begin(ssid, password); // Connect to WiFi - defaults to WiFi Station mode
+        // Ensure WiFi is connected
+        while (WiFi.status() != WL_CONNECTED)
+        {
+            Serial.print("connecting...");
+            delay(500);
+        }
         Serial.println(WiFi.macAddress());
         ArduinoOTA.begin();
         Serial.println(WiFi.localIP());
