@@ -402,39 +402,38 @@ void setup()
     Serial.begin(115200);
     Serial.println("Version: " VERSION);
     Serial.print("XCRemote MAC Address:  ");
-    Serial.println(WiFi.macAddress());
 
-    // link the xxxclick functions to be called on xxxclick event.
-    button.attachClick(SingleClick);
-    button2.attachDoubleClick(cancelDoubleClick);
-
-    button.attachDoubleClick(DoubleClick);
-    button.setPressMs(1000); // that is the time when LongHoldCenter is called
-    button.attachLongPressStart(HoldCenter);
-
-    // pinMode(LED_Pin, OUTPUT);
-    Keyboard.begin();
-    USB.begin();
-    // starting ota process
-    Serial.println(WiFi.localIP());
-
-    ArduinoOTA.begin();
-
-    Serial.println("Ready for OTA updates");
-    Serial.print("OTA Hostname: ");
-    Serial.println(ArduinoOTA.getHostname());
+    // ArduinoOTA.begin();
 
     delay(1000);
     // Keyboard.write('R');
     if (digitalRead(Center_Pin) == 0)
     {
+
+        Serial.println(WiFi.macAddress());
         ArduinoOTA.begin();
+        Serial.println(WiFi.localIP());
+        Serial.println("Ready for OTA updates");
+        Serial.print("OTA Hostname: ");
+        Serial.println(ArduinoOTA.getHostname());
         ArduinoOTA.setPassword(password);
+        server_running = true;
         // updating_server_start();
     }
     else
     {
         Serial.println("Starting USB work!");
+        // link the xxxclick functions to be called on xxxclick event.
+        button.attachClick(SingleClick);
+        button2.attachDoubleClick(cancelDoubleClick);
+
+        button.attachDoubleClick(DoubleClick);
+        button.setPressMs(1000); // that is the time when LongHoldCenter is called
+        button.attachLongPressStart(HoldCenter);
+
+        // pinMode(LED_Pin, OUTPUT);
+        Keyboard.begin();
+        USB.begin();
 
         Up.onRelease(Joy_onRelease);
         Down.onRelease(Joy_onRelease);
@@ -459,18 +458,20 @@ void setup()
         Cancel.onHoldRepeat(Button_Hold_Threshold, Button_Rebounce_Interval, Button_onHoldRepeat);
 
         Joy_Active_Counter = 0;
+        server_running = false;
     }
 }
 
 void loop()
 {
-    ArduinoOTA.handle();
+
     // keep watching the push button:
     button.tick();
     button2.tick();
     if (server_running)
     {
-        server.handleClient();
+        ArduinoOTA.handle();
+        // server.handleClient();
         delay(1);
     }
     else
