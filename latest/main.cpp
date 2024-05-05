@@ -1,4 +1,17 @@
+// Changelog:
+// XCREMOTE USB Version
+// Double Klick "X" Opens running App overview
 
+// uses libraries from
+// https://github.com/r89m/PushButton
+// https://github.com/r89m/Button
+// https://github.com/thomasfredericks/Bounce2
+// #define CONFIG_TINYUSB_HID_ENABLED 1
+
+#include <Button.h>
+#include <ButtonEventCallback.h>
+#include <PushButton.h>
+#include <Bounce2.h>
 
 //  Updating server
 #include <WiFi.h>
@@ -6,27 +19,77 @@
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <Update.h>
-#include <Arduino.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
+// usb buttons funtionality
+#include "OneButton.h"
 #include "USB.h"
-#include "USBHIDGamepad.h"
-
+#include "USBHIDKeyboard.h"
 // Version
-#define VERSION "Joystick OTA"
+#define VERSION "3.0_USB"
 
-USBHIDGamepad Gamepad;
+USBHIDKeyboard Keyboard;
 
-const int HAT_UP_PIN = 18;
-const int HAT_LEFT_PIN = 37;
-const int HAT_DOWN_PIN = 38;
-const int HAT_RIGHT_PIN = 39;
-const int HAT_CENTER_PIN = 15;
-const int Rectangle_Button_Pin = 7; // Rectangle  (Button 2)
-const int Circle_Button_Pin = 42;   // Circle     (Button 4)
-const int Cancel_Button_Pin = 45;   // X          (Button 5)
-const int Triangle_Button_Pin = 1;  // Triangle   (Button 3)
-const int Trigger_Button_Pin = 41;
-const int Ptt_Button_Pin = 33;
-bool buttonPressed = false;
+// Pin Assignments
+
+const int LED_Pin = 02;
+
+const int Up_Pin = 18;       // UP         (Joystick Up)
+const int Down_Pin = 38;     // Down       (Joystick Down)
+const int Left_Pin = 37;     // Left       (Joystick Left)
+const int Right_Pin = 39;    // Right      (Joystick Right)
+const int Center_Pin = 15;   // Enter      (Joystick Press)
+const int Rectangle_Pin = 7; // Rectangle  (Button 2)
+const int Triangle_Pin = 1;  // Triangle   (Button 3)
+const int Circle_Pin = 42;   // Circle     (Button 4)
+const int Cancel_Pin = 45;   // X          (Button 5)
+
+// Button's keys
+const char Up_Press_Key = KEY_UP_ARROW;
+const char Down_Press_Key = KEY_DOWN_ARROW;
+const char Left_Press_Key = KEY_LEFT_ARROW;
+const char Right_Press_Key = KEY_RIGHT_ARROW;
+const char Rectangle_Press_Key = KEY_F4;
+const char Rectangle_Hold_Key = KEY_F3;
+const char Triangle_Press_Key = KEY_F6;
+const char Triangle_Hold_Key = KEY_F2;
+const char Circle_Press_Key = 'M';
+const char Circle_Hold_Key = KEY_F1;
+const char Cancel_Press_Key = KEY_ESC;
+const char Cancel_Hold_Key = 'T';
+
+const int Joy_Rebounce_Interval = 3;
+const int Joy_Rebounce_Threshold = 20;
+const int Joy_Active_Threshold = 100;
+const int Button_Hold_Threshold = 500;
+const int Button_Rebounce_Interval = 500;
+const int Reset_Threshold = 5000;
+const int Joy_Hold_Threshold = 1;
+
+// PushButton's instances
+PushButton Up = PushButton(Up_Pin);
+PushButton Down = PushButton(Down_Pin);
+PushButton Left = PushButton(Left_Pin);
+PushButton Right = PushButton(Right_Pin);
+PushButton Center = PushButton(Center_Pin);
+PushButton Rectangle = PushButton(Rectangle_Pin);
+PushButton Triangle = PushButton(Triangle_Pin);
+PushButton Circle = PushButton(Circle_Pin);
+PushButton Cancel = PushButton(Cancel_Pin);
+
+// Setup a new OneButton on pin PIN_INPUT
+// The 2. parameter activeLOW is true, because external wiring sets the button to LOW when pressed.
+OneButton button(Center_Pin, true);
+OneButton button2(Cancel_Pin, true);
+
+// save the millis when a press has started.
+unsigned long HoldCenterTime;
+
+// Variables
+int bt_first_connected = false;
+boolean Joy_Inactive = true;
+int Joy_Active_Counter = 0;
+
 // Updating server
 const char *host = "esp32";
 const char *ssid = "XCREMOTE";
@@ -34,22 +97,120 @@ const char *ssid = "XCREMOTE";
 const char *password = "xcremote";
 boolean server_running = 0;
 WebServer server(80);
-unsigned long buttonPressStartTime = 0;
-unsigned long LONG_PRESS_DURATION = 1000;
-unsigned long SHORT_PRESS_DURATION = 200;
 
-// Define corresponding button IDs
-#define BUTTON_RECTANGLE 1
-#define BUTTON_CIRCLE 2
-#define BUTTON_CANCEL 3
-#define BUTTON_TRIANGLE 4
-#define BUTTON_RECTANGLE_RELEASE 1
-#define BUTTON_CIRCLE_RELEASE 2
-#define BUTTON_CANCEL_RELEASE 3
-#define BUTTON_TRIANGLE_RELEASE 4
-#define BUTTON_HAT_CENTER 8
-#define BUTTON_TRIGGER 9
-#define BUTTON_PTT 10
+// current Cruise_Climb (Joy Center) state, staring with LOW (0)
+int Cruise_Climb = LOW;
+
+void keyboardPress(char key)
+{
+    Keyboard.press(key);
+}
+
+void cancelDoubleClick()
+{
+    keyboardPress(KEY_LEFT_ALT);
+    keyboardPress(KEY_TAB);
+    Keyboard.releaseAll();
+}
+void Button_onRelease(Button &btn, uint16_t duration)
+{
+    if (btn.is(Rectangle))
+        keyboardPress(Rectangle_Press_Key);
+    if (btn.is(Triangle))
+        keyboardPress(Triangle_Press_Key);
+    if (btn.is(Circle))
+        keyboardPress(Circle_Press_Key);
+    if (btn.is(Cancel))
+        keyboardPress(Cancel_Press_Key);
+    Keyboard.releaseAll();
+}
+
+void Button_onHold(Button &btn, uint16_t duration)
+{
+    if (btn.is(Rectangle))
+        keyboardPress(Rectangle_Hold_Key);
+    if (btn.is(Triangle))
+        keyboardPress(Triangle_Hold_Key);
+    if (btn.is(Circle))
+        keyboardPress(Circle_Hold_Key);
+    Keyboard.releaseAll();
+}
+
+void Joy_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
+{
+    if (btn.isPressed() && Joy_Active_Counter == 5)
+    {
+        if (btn.is(Up))
+            keyboardPress(Up_Press_Key);
+        if (btn.is(Down))
+            keyboardPress(Down_Press_Key);
+        if (btn.is(Left))
+            keyboardPress(Left_Press_Key);
+        if (btn.is(Right))
+            keyboardPress(Right_Press_Key);
+        Keyboard.releaseAll();
+    }
+    Joy_Active_Counter = Joy_Active_Counter + 1;
+    if (Joy_Inactive && Joy_Active_Counter > Joy_Active_Threshold)
+    {
+        Joy_Active_Counter = 0;
+        Joy_Inactive = false;
+    }
+    if (!Joy_Inactive && Joy_Active_Counter > Joy_Rebounce_Threshold)
+        Joy_Active_Counter = 0;
+}
+void Joy_onRelease(Button &btn, uint16_t duration)
+{
+    Joy_Active_Counter = 0;
+    Joy_Inactive = true;
+}
+
+void SingleClick()
+{ // this function will be called when the Joy center button is pressed 1 time only
+    Keyboard.write(KEY_RETURN);
+    Serial.println("SingleClick() detected.");
+} // SingleClick
+
+void DoubleClick()
+{ // this function will be called when the Joy center button was pressed 2 times in a short timeframe.
+    if (Cruise_Climb == LOW)
+    {
+        Keyboard.print("V");
+        Serial.println("Vario");
+    }
+    else
+    {
+        Keyboard.print("S");
+        Serial.println("Speed to fly");
+    }
+    Cruise_Climb = !Cruise_Climb; // reverse the Cruise_Climb
+} // DoubleClick
+
+void HoldCenter()
+{ // this function will be called when the Joy center button is held down for 0.5 second or more.
+    Keyboard.print("P");
+    Serial.println("PAN()");
+    HoldCenterTime = millis() - 500; // as set in setPressTicks()
+} // HoldCenter()
+
+void Button_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
+{ // this function will be called when the Cancel button is held down for a longer time
+    if (btn.is(Cancel))
+    {
+        if (repeat_count == 1)
+        {
+            keyboardPress(Cancel_Hold_Key);
+            Keyboard.releaseAll();
+        }
+        if (duration > 5000)
+        {
+            Keyboard.print("E");
+            delay(1000);
+            ESP.restart(); // ESP32_Restart
+        }
+    }
+}
+
 /*
  * ******************************************************
  * Updating server
@@ -183,9 +344,9 @@ void updating_server_start(void)
     server.on(
         "/update", HTTP_POST, []()
         {
-      server.sendHeader("Connection", "close");
-      server.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
-      ESP.restart(); },
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
+    ESP.restart(); },
         []()
         {
             HTTPUpload &upload = server.upload();
@@ -227,182 +388,118 @@ void updating_server_start(void)
  */
 void setup()
 {
-    // Initialize button pins
-    // Initialize button pins
-    pinMode(HAT_UP_PIN, INPUT_PULLUP);
-    pinMode(HAT_LEFT_PIN, INPUT_PULLUP);
-    pinMode(HAT_DOWN_PIN, INPUT_PULLUP);
-    pinMode(HAT_RIGHT_PIN, INPUT_PULLUP);
-    pinMode(HAT_CENTER_PIN, INPUT_PULLUP);
-    pinMode(Rectangle_Button_Pin, INPUT_PULLUP);
-    pinMode(Circle_Button_Pin, INPUT_PULLUP);
-    pinMode(Cancel_Button_Pin, INPUT_PULLUP);
-    pinMode(Triangle_Button_Pin, INPUT_PULLUP);
-    pinMode(Trigger_Button_Pin, INPUT_PULLUP);
-    pinMode(Ptt_Button_Pin, INPUT_PULLUP);
+
+    pinMode(Up_Pin, INPUT_PULLUP);
+    pinMode(Down_Pin, INPUT_PULLUP);
+    pinMode(Left_Pin, INPUT_PULLUP);
+    pinMode(Right_Pin, INPUT_PULLUP);
+    pinMode(Center_Pin, INPUT_PULLUP);
+    pinMode(Rectangle_Pin, INPUT_PULLUP);
+    pinMode(Triangle_Pin, INPUT_PULLUP);
+    pinMode(Circle_Pin, INPUT_PULLUP);
+    pinMode(Cancel_Pin, INPUT_PULLUP);
 
     Serial.begin(115200);
     Serial.println("Version: " VERSION);
     Serial.print("XCRemote MAC Address:  ");
-    Serial.println(WiFi.macAddress());
-    Gamepad.begin();
-    USB.begin();
 
-    // USB.begin();
+    // ArduinoOTA.begin();
+
+    delay(2000);
     // Keyboard.write('R');
-
-    if (digitalRead(HAT_CENTER_PIN) == 0)
+    if (digitalRead(Center_Pin) == 0)
     {
-        updating_server_start();
-    }
-
-    else
-    {
-        Serial.println("Starting Gamepad");
-    }
-}
-void handleButtonPress(uint8_t button)
-{
-    if (!buttonPressed)
-    {
-        // Button was just pressed, record start time
-        buttonPressStartTime = millis();
-        buttonPressed = true;
-        Gamepad.pressButton(button); // Send initial press
-    }
-    else
-    {
-        // Button is being held, check for long press
-        unsigned long currentMillis = millis();
-        if (currentMillis - buttonPressStartTime > LONG_PRESS_DURATION)
+        WiFi.begin(ssid, password); // Connect to WiFi - defaults to WiFi Station mode
+        // Ensure WiFi is connected
+        while (WiFi.status() != WL_CONNECTED)
         {
-            // Long press detected, handle accordingly
-            // Example: Gamepad.releaseButton(button); // Release initial press
-            // Additional actions for long press
+            Serial.print("connecting...");
+            delay(500);
         }
+        Serial.println(WiFi.macAddress());
+        ArduinoOTA.begin();
+        Serial.println(WiFi.localIP());
+        Serial.println("Ready for OTA updates");
+        Serial.print("OTA Hostname: ");
+        Serial.println(ArduinoOTA.getHostname());
+        ArduinoOTA.setPassword(password);
+        server_running = true;
+        // updating_server_start();
     }
-}
+    else
+    {
+        Serial.println("Starting USB work!");
+        // link the xxxclick functions to be called on xxxclick event.
+        button.attachClick(SingleClick);
+        button2.attachDoubleClick(cancelDoubleClick);
 
-// Function to handle button release
-void handleButtonRelease(uint8_t button)
-{
-    buttonPressed = false;
-    Gamepad.releaseButton(button);
-    unsigned long currentMillis = millis();
-    if (currentMillis - buttonPressStartTime < SHORT_PRESS_DURATION)
-    {
-        // Short press detected, handle accordingly
-        // Additional actions for short press
-    }
-}
-void updateHatSwitch()
-{
-    int hatPosition = HAT_CENTER; // Assume the hat is in the center initially
+        button.attachDoubleClick(DoubleClick);
+        button.setPressMs(1000); // that is the time when LongHoldCenter is called
+        button.attachLongPressStart(HoldCenter);
 
-    // Check the combination of button presses for each hat position
-    if (digitalRead(HAT_UP_PIN) == LOW && digitalRead(HAT_LEFT_PIN) == LOW)
-    {
-        hatPosition = HAT_UP_LEFT;
-    }
-    else if (digitalRead(HAT_UP_PIN) == LOW && digitalRead(HAT_RIGHT_PIN) == LOW)
-    {
-        hatPosition = HAT_UP_RIGHT;
-    }
-    else if (digitalRead(HAT_DOWN_PIN) == LOW && digitalRead(HAT_LEFT_PIN) == LOW)
-    {
-        hatPosition = HAT_DOWN_LEFT;
-    }
-    else if (digitalRead(HAT_DOWN_PIN) == LOW && digitalRead(HAT_RIGHT_PIN) == LOW)
-    {
-        hatPosition = HAT_DOWN_RIGHT;
-    }
-    else if (digitalRead(HAT_UP_PIN) == LOW)
-    {
-        hatPosition = HAT_UP;
-    }
-    else if (digitalRead(HAT_LEFT_PIN) == LOW)
-    {
-        hatPosition = HAT_LEFT;
-    }
-    else if (digitalRead(HAT_DOWN_PIN) == LOW)
-    {
-        hatPosition = HAT_DOWN;
-    }
-    else if (digitalRead(HAT_RIGHT_PIN) == LOW)
-    {
-        hatPosition = HAT_RIGHT;
-    }
+        // pinMode(LED_Pin, OUTPUT);
+        Keyboard.begin();
+        USB.begin();
 
-    // Update the hat position in the Gamepad
-    Gamepad.hat(hatPosition);
+        Up.onRelease(Joy_onRelease);
+        Down.onRelease(Joy_onRelease);
+        Left.onRelease(Joy_onRelease);
+        Right.onRelease(Joy_onRelease);
+
+        Up.onHoldRepeat(Joy_Hold_Threshold, Joy_Rebounce_Interval, Joy_onHoldRepeat);
+        Down.onHoldRepeat(Joy_Hold_Threshold, Joy_Rebounce_Interval, Joy_onHoldRepeat);
+        Left.onHoldRepeat(Joy_Hold_Threshold, Joy_Rebounce_Interval, Joy_onHoldRepeat);
+        Right.onHoldRepeat(Joy_Hold_Threshold, Joy_Rebounce_Interval, Joy_onHoldRepeat);
+
+        Center.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
+        Rectangle.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
+        Triangle.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
+        Circle.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
+        Cancel.onRelease(0, Button_Hold_Threshold - 1, Button_onRelease);
+
+        Center.onHold(Button_Hold_Threshold, Button_onHold);
+        Rectangle.onHold(Button_Hold_Threshold, Button_onHold);
+        Triangle.onHold(Button_Hold_Threshold, Button_onHold);
+        Circle.onHold(Button_Hold_Threshold, Button_onHold);
+        Cancel.onHoldRepeat(Button_Hold_Threshold, Button_Rebounce_Interval, Button_onHoldRepeat);
+
+        Joy_Active_Counter = 0;
+        server_running = false;
+    }
 }
 
 void loop()
 {
-    // Check button state and call corresponding functions
-    if (digitalRead(Rectangle_Button_Pin) == LOW)
+
+    // keep watching the push button:
+    button.tick();
+    button2.tick();
+    if (server_running)
     {
-        handleButtonPress(BUTTON_RECTANGLE);
+        ArduinoOTA.handle();
+        // server.handleClient();
+        delay(1);
     }
     else
     {
-        handleButtonRelease(BUTTON_RECTANGLE);
+        if (1)
+        {
+            Serial.println("ok");
+            if (not bt_first_connected)
+            {
+                bt_first_connected = true;
+                Serial.println("usb connected");
+                delay(2000);
+            }
+            Up.update();
+            Down.update();
+            Left.update();
+            Right.update();
+            Center.update();
+            Rectangle.update();
+            Triangle.update();
+            Circle.update();
+            Cancel.update();
+        }
     }
-
-    if (digitalRead(Circle_Button_Pin) == LOW)
-    {
-        handleButtonPress(BUTTON_CIRCLE);
-    }
-    else
-    {
-        handleButtonRelease(BUTTON_CIRCLE);
-    }
-
-    if (digitalRead(Cancel_Button_Pin) == LOW)
-    {
-        handleButtonPress(BUTTON_CANCEL);
-    }
-    else
-    {
-        handleButtonRelease(BUTTON_CANCEL);
-    }
-
-    if (digitalRead(Triangle_Button_Pin) == LOW)
-    {
-        handleButtonPress(BUTTON_TRIANGLE);
-    }
-    else
-    {
-        handleButtonRelease(BUTTON_TRIANGLE);
-    }
-
-    if (digitalRead(HAT_CENTER_PIN) == LOW)
-    {
-        handleButtonPress(BUTTON_HAT_CENTER);
-    }
-    else
-    {
-        handleButtonRelease(BUTTON_HAT_CENTER);
-    }
-
-    if (digitalRead(Ptt_Button_Pin) == LOW)
-    {
-        handleButtonPress(BUTTON_PTT);
-    }
-    else
-    {
-        handleButtonRelease(BUTTON_PTT);
-    }
-
-    if (digitalRead(Trigger_Button_Pin) == LOW)
-    {
-        handleButtonPress(BUTTON_TRIGGER);
-    }
-    else
-    {
-        handleButtonRelease(BUTTON_TRIGGER);
-    }
-
-    // Update hat switch
-    updateHatSwitch();
 }
