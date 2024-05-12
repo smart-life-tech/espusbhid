@@ -227,6 +227,7 @@ void updating_server_start(void)
  */
 void setup()
 {
+    delay(3000); // delay to make decscion on button press
     // Initialize button pins
     // Initialize button pins
     pinMode(HAT_UP_PIN, INPUT_PULLUP);
@@ -253,7 +254,15 @@ void setup()
 
     if (digitalRead(HAT_CENTER_PIN) == 0)
     {
+        delay(400);
         updating_server_start();
+        while (1)
+        {
+            server.handleClient();
+            delay(1);
+            if (!digitalRead(HAT_CENTER_PIN))
+                break;
+        }
     }
 
     else
