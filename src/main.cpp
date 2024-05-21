@@ -254,7 +254,8 @@ void setup()
 
     if (digitalRead(HAT_CENTER_PIN) == 0)
     {
-        delay(400);
+        Serial.println("Starting Ota mode");
+        delay(1000);
         updating_server_start();
         while (1)
         {
