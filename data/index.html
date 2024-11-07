@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XCREMOTE Updater</title>
+    <link rel="stylesheet" href="/style.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <div id="upload_form">
+        <h3>XCREMOTE Updater</h3>
+        <p>Version: V1.0</p>
+        <form method="POST" action="#" enctype="multipart/form-data">
+            <input type="file" name="update"><br><br>
+            <input type="submit" value="Update">
+        </form>
+        <div id="prg">progress: 0%</div>
+    </div>
+    <script>
+        $('form').submit(function(e) {
+            e.preventDefault();
+            var form = $('#upload_form')[0];
+            var data = new FormData(form);
+            $.ajax({
+                url: '/update',
+                type: 'POST',
+                data: data,
+                contentType: false,
+                processData: false,
+                xhr: function() {
+                    var xhr = new window.XMLHttpRequest();
+                    xhr.upload.addEventListener('progress', function(evt) {
+                        if (evt.lengthComputable) {
+                            var per = evt.loaded / evt.total;
+                            $('#prg').html('progress: ' + Math.round(per * 100) + '%');
+                        }
+                    }, false);
+                    return xhr;
+                },
+                success: function(d, s) {
+                    console.log('success!');
+                },
+                error: function(a, b, c) {
+                    console.error('Upload failed');
+                }
+            });
+        });
+    </script>
+</body>
+</html>

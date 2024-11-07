@@ -22,14 +22,6 @@
 #include "OneButton.h"
 #include "USB.h"
 #include "USBHIDKeyboard.h"
-
-//bluetooth
-#include <BluetoothSerial.h>
-#include <BleKeyboard.h>
-#include <NimBLEDevice.h>
-// Init BLE
-BleKeyboard bleKeyboard("XCREMOTE", "XCNAV UG", 100);
-#define VERSION "3.0_BLE"
 // Version
 #define VERSION "3.0_USB_STF"
 
@@ -117,22 +109,12 @@ void keyboardPress(char key)
 {
   Keyboard.press(key);
 }
-void blekeyboardPress(char key)
-{
-  bleKeyboard.press(key);
-}
 
 void cancelDoubleClick()
 {
   keyboardPress(KEY_LEFT_ALT);
   keyboardPress(KEY_TAB);
   Keyboard.releaseAll();
-}
-void blecancelDoubleClick()
-{
-    bleKeyboard.press(KEY_LEFT_ALT);
-    bleKeyboard.press(KEY_TAB);
-    bleKeyboard.releaseAll();
 }
 void Button_onRelease(Button &btn, uint16_t duration)
 {

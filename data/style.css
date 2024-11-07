@@ -1,0 +1,29 @@
+body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh; /* Full height of the viewport */
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: url('/logo.png') no-repeat center center fixed; /* Logo as background */
+    background-size: cover; /* Ensure the background covers the entire viewport */
+}
+#upload_form {
+    background-color: rgba(255, 255, 255, 0.9); /* White background with slight transparency */
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    width: 90%; /* Responsive width */
+    max-width: 400px; /* Maximum width for larger screens */
+    text-align: center;
+}
+h3 {
+    margin-top: 0;
+}
+input[type='file'], input[type='submit'] {
+    width: 100%; /* Full width for both inputs */
+    margin-top: 10px; /* Margin for spacing */
+}
+#prg {
+    margin-top: 10px;
+}
