@@ -1,8 +1,6 @@
-
 // Changelog:
-// made center doubleklick toggle between STF/Vario (toggle sending S/V)
-//  Reset XCREMOTE with 5sec X-Hold added
-// New BLEKeyboard Library keeps BLE Advertising when disconnected
+// XCREMOTE USB Version
+// Double Klick "X" Opens running App overview
 
 // uses libraries from
 // https://github.com/r89m/PushButton
@@ -13,10 +11,8 @@
 #include <ButtonEventCallback.h>
 #include <PushButton.h>
 #include <Bounce2.h>
-#include <BluetoothSerial.h>
-#include <BleKeyboard.h>
 
-// Updating server
+//  Updating server
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WebServer.h>
@@ -26,25 +22,25 @@
 #include "USB.h"
 #include "USBHIDKeyboard.h"
 // Version
-#define VERSION "2.3.2"
+#define VERSION "3.0_USB_STF"
 
 USBHIDKeyboard Keyboard;
-// Init BLE
-BleKeyboard bleKeyboard("XCREMOTE", "XCNAV UG", 100);
 
 // Pin Assignments
 
 const int LED_Pin = 02;
 
-const int Up_Pin = 15;        // UP         (Joystick Up)
-const int Down_Pin = 26;      // Down       (Joystick Down)
-const int Left_Pin = 25;      // Left       (Joystick Left)
-const int Right_Pin = 27;     // Right      (Joystick Right)
-const int Center_Pin = 17;    // Enter      (Joystick Press)
-const int Rectangle_Pin = 18; // Rectangle  (Button 2)
-const int Triangle_Pin = 05;  // Triangle   (Button 3)
-const int Circle_Pin = 33;    // Circle     (Button 4)
-const int Cancel_Pin = 04;    // X          (Button 5)
+const int Up_Pin = 18;       // UP         (Joystick Up)
+const int Down_Pin = 38;     // Down       (Joystick Down)
+const int Left_Pin = 37;     // Left       (Joystick Left)
+const int Right_Pin = 39;    // Right      (Joystick Right)
+const int Center_Pin = 15;   // Enter      (Joystick Press)
+const int Rectangle_Pin = 7; // Rectangle  (Button 2)
+const int Triangle_Pin = 0;  // Triangle   (Button 3)
+const int Circle_Pin = 42;    // Circle     (Button 4)
+const int Cancel_Pin = 45;    // X          (Button 5)
+const int Stf_Pin = 41;    // X          (Trigger_BTN 5)
+const int OptoPin = 33;
 
 // Button's keys
 const char Up_Press_Key = KEY_UP_ARROW;
@@ -78,12 +74,17 @@ PushButton Rectangle = PushButton(Rectangle_Pin);
 PushButton Triangle = PushButton(Triangle_Pin);
 PushButton Circle = PushButton(Circle_Pin);
 PushButton Cancel = PushButton(Cancel_Pin);
+PushButton Stf = PushButton(Stf_Pin);
+
 
 // Setup a new OneButton on pin PIN_INPUT
 // The 2. parameter activeLOW is true, because external wiring sets the button to LOW when pressed.
 OneButton button(Center_Pin, true);
+OneButton button2(Cancel_Pin, true);
+OneButton button3(Stf_Pin, true);
 
-// save the millis when a press has started.
+// save the millis when a press has started.S
+
 unsigned long HoldCenterTime;
 
 // Variables
@@ -101,13 +102,19 @@ WebServer server(80);
 
 // current Cruise_Climb (Joy Center) state, staring with LOW (0)
 int Cruise_Climb = LOW;
+int Cruise_ClimbOpto = LOW;
 
 void keyboardPress(char key)
 {
-  bleKeyboard.press(key);
   Keyboard.press(key);
 }
 
+void cancelDoubleClick()
+{
+  keyboardPress(KEY_LEFT_ALT);
+  keyboardPress(KEY_TAB);
+  Keyboard.releaseAll();
+}
 void Button_onRelease(Button &btn, uint16_t duration)
 {
   if (btn.is(Rectangle))
@@ -118,9 +125,8 @@ void Button_onRelease(Button &btn, uint16_t duration)
     keyboardPress(Circle_Press_Key);
   if (btn.is(Cancel))
     keyboardPress(Cancel_Press_Key);
-  bleKeyboard.releaseAll();
   Keyboard.releaseAll();
-}
+  }
 
 void Button_onHold(Button &btn, uint16_t duration)
 {
@@ -130,7 +136,6 @@ void Button_onHold(Button &btn, uint16_t duration)
     keyboardPress(Triangle_Hold_Key);
   if (btn.is(Circle))
     keyboardPress(Circle_Hold_Key);
-  bleKeyboard.releaseAll();
   Keyboard.releaseAll();
 }
 
@@ -146,7 +151,6 @@ void Joy_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
       keyboardPress(Left_Press_Key);
     if (btn.is(Right))
       keyboardPress(Right_Press_Key);
-    bleKeyboard.releaseAll();
     Keyboard.releaseAll();
   }
   Joy_Active_Counter = Joy_Active_Counter + 1;
@@ -165,8 +169,7 @@ void Joy_onRelease(Button &btn, uint16_t duration)
 }
 
 void SingleClick()
-{ // this function will be called when the Joy center button is pressed 1 time only.
-  bleKeyboard.write(KEY_RETURN);
+{ // this function will be called when the Joy center button is pressed 1 time only
   Keyboard.write(KEY_RETURN);
   Serial.println("SingleClick() detected.");
 } // SingleClick
@@ -175,26 +178,39 @@ void DoubleClick()
 { // this function will be called when the Joy center button was pressed 2 times in a short timeframe.
   if (Cruise_Climb == LOW)
   {
-    bleKeyboard.print("V");
     Keyboard.print("V");
     Serial.println("Vario");
+    digitalWrite(OptoPin, LOW);
   }
   else
   {
-    bleKeyboard.print("S");
     Keyboard.print("S");
     Serial.println("Speed to fly");
+    digitalWrite(OptoPin, HIGH);
   }
   Cruise_Climb = !Cruise_Climb; // reverse the Cruise_Climb
 } // DoubleClick
 
 void HoldCenter()
 { // this function will be called when the Joy center button is held down for 0.5 second or more.
-  bleKeyboard.print("P");
   Keyboard.print("P");
   Serial.println("PAN()");
   HoldCenterTime = millis() - 500; // as set in setPressTicks()
 } // HoldCenter()
+
+void StfSingleClick()
+{ // this function will be called when the STF button is pressed.
+  if (Cruise_ClimbOpto == LOW)
+  {
+    digitalWrite(OptoPin, HIGH);
+  }
+  else
+  {
+    digitalWrite(OptoPin, LOW);
+  }
+  Cruise_ClimbOpto = !Cruise_ClimbOpto; // reverse the Cruise_ClimbOpto
+} // StfSingleClick 
+
 
 void Button_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
 { // this function will be called when the Cancel button is held down for a longer time
@@ -203,12 +219,10 @@ void Button_onHoldRepeat(Button &btn, uint16_t duration, uint16_t repeat_count)
     if (repeat_count == 1)
     {
       keyboardPress(Cancel_Hold_Key);
-      bleKeyboard.releaseAll();
       Keyboard.releaseAll();
     }
     if (duration > 5000)
     {
-      bleKeyboard.print("E");
       Keyboard.print("E");
       delay(1000);
       ESP.restart(); // ESP32_Restart
@@ -392,8 +406,11 @@ void updating_server_start(void)
  * ******************************************************
  */
 void setup()
-{
 
+//configure pin 2 as an input and enable the internal pull-up resistor
+{ 
+  pinMode(41, INPUT_PULLUP);
+  pinMode(OptoPin, OUTPUT);
   pinMode(Up_Pin, INPUT_PULLUP);
   pinMode(Down_Pin, INPUT_PULLUP);
   pinMode(Left_Pin, INPUT_PULLUP);
@@ -403,6 +420,7 @@ void setup()
   pinMode(Triangle_Pin, INPUT_PULLUP);
   pinMode(Circle_Pin, INPUT_PULLUP);
   pinMode(Cancel_Pin, INPUT_PULLUP);
+  pinMode(0,INPUT_PULLUP);
 
   Serial.begin(115200);
   Serial.println("Version: " VERSION);
@@ -411,6 +429,8 @@ void setup()
 
   // link the xxxclick functions to be called on xxxclick event.
   button.attachClick(SingleClick);
+  button2.attachDoubleClick(cancelDoubleClick);
+
   button.attachDoubleClick(DoubleClick);
   button.setPressMs(1000); // that is the time when LongHoldCenter is called
   button.attachLongPressStart(HoldCenter);
@@ -418,14 +438,13 @@ void setup()
   // pinMode(LED_Pin, OUTPUT);
   Keyboard.begin();
   USB.begin();
-  delay(1000);
-  Keyboard.write('R');
+  delay(2000);
+   Keyboard.write('R');
   if (digitalRead(Center_Pin) == 0)
     updating_server_start();
   else
   {
-    Serial.println("Starting BLE work!");
-    bleKeyboard.begin();
+    Serial.println("Starting USB work!");
 
     Up.onRelease(Joy_onRelease);
     Down.onRelease(Joy_onRelease);
@@ -457,6 +476,7 @@ void loop()
 {
   // keep watching the push button:
   button.tick();
+  button2.tick();
   if (server_running)
   {
     server.handleClient();
@@ -464,15 +484,14 @@ void loop()
   }
   else
   {
-    if (bleKeyboard.isConnected())
+    if (1)
     {
       Serial.println("ok");
       if (not bt_first_connected)
       {
         bt_first_connected = true;
-        Serial.println("BT connected");
+        Serial.println("usb connected");
         delay(2000);
-        bleKeyboard.print("C");
       }
       Up.update();
       Down.update();
@@ -483,20 +502,7 @@ void loop()
       Triangle.update();
       Circle.update();
       Cancel.update();
-    }
-    else
-    {
-#ifdef ARDUINO_USB_MODE // if the board is usb enabled, proceed with the command usb
-      Up.update();
-      Down.update();
-      Left.update();
-      Right.update();
-      Center.update();
-      Rectangle.update();
-      Triangle.update();
-      Circle.update();
-      Cancel.update();
-#endif
+      Stf.update();
     }
   }
 }
