@@ -25,199 +25,391 @@
 #include "esp_ota_ops.h"
 #include "esp_netif.h"
 #include "driver/gpio.h"
-//#include "esp_tinyusb.h"
+// #include "esp_tinyusb.h"
 //#include "tusb_hid.h"
+#include "freertos/event_groups.h"
+#include "freertos/queue.h"
+#include "esp_err.h"
+#include "esp_log.h"
+#include "usb/usb_host.h"
+#include "errno.h"
+#include "driver/gpio.h"
 
-#define DEFAULT_SCAN_LIST_SIZE CONFIG_EXAMPLE_SCAN_LIST_SIZE
+#include "usb/hid_host.h"
+#include "usb/hid_usage_keyboard.h"
+// #include "usb/hid_usage_mouse.h"
 
-#ifdef CONFIG_EXAMPLE_USE_SCAN_CHANNEL_BITMAP
-#define USE_CHANNEL_BTIMAP 1
-#define CHANNEL_LIST_SIZE 3
-static uint8_t channel_list[CHANNEL_LIST_SIZE] = {1, 6, 11};
-#endif /*CONFIG_EXAMPLE_USE_SCAN_CHANNEL_BITMAP*/
+#define TAG "Joystick OTA"
 
-static const char *TAG = "scan";
+// Wi-Fi Credentials
+#define WIFI_SSID "XCREMOTE"
+#define WIFI_PASS "xcremote"
 
-static void print_auth_mode(int authmode)
+// GPIO Pins
+#define HAT_UP_PIN GPIO_NUM_18
+#define HAT_LEFT_PIN GPIO_NUM_37
+#define HAT_DOWN_PIN GPIO_NUM_38
+#define HAT_RIGHT_PIN GPIO_NUM_39
+#define HAT_CENTER_PIN GPIO_NUM_15
+#define RECTANGLE_BUTTON_PIN GPIO_NUM_7
+#define CIRCLE_BUTTON_PIN GPIO_NUM_42
+#define CANCEL_BUTTON_PIN GPIO_NUM_45
+#define TRIANGLE_BUTTON_PIN GPIO_NUM_0
+#define PTT_BUTTON_PIN GPIO_NUM_41
+
+// HID Keyboard Keycodes
+#define KEY_ARROW_UP 0x52
+#define KEY_ARROW_DOWN 0x51
+#define KEY_ARROW_LEFT 0x50
+#define KEY_ARROW_RIGHT 0x4F
+#define KEY_ENTER 0x28
+#define KEY_A 0x04
+#define KEY_B 0x05
+#define KEY_C 0x06
+#define KEY_D 0x07
+#define KEY_E 0x08
+
+// Button Press Durations
+#define LONG_PRESS_DURATION_MS 1000
+#define SHORT_PRESS_DURATION_MS 200
+
+// USB HID Gamepad Report
+static uint8_t gamepad_report[8];
+
+// OTA Update Variables
+esp_ota_handle_t ota_handle;
+const esp_partition_t *ota_partition = NULL;
+
+// HTTP Server
+static httpd_handle_t server = NULL;
+
+// Button states
+static bool button_pressed = false;
+static uint32_t button_press_start_time = 0;
+
+// Static Files
+extern const unsigned char jquery_min_js_start[] asm("_binary_jquery_min_js_start");
+extern const unsigned char jquery_min_js_end[] asm("_binary_jquery_min_js_end");
+size_t jquery_min_js_len =2048;// (jquery_min_js_end - jquery_min_js_start);
+
+// HID Key Values
+enum
 {
-    switch (authmode) {
-    case WIFI_AUTH_OPEN:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_OPEN");
-        break;
-    case WIFI_AUTH_OWE:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_OWE");
-        break;
-    case WIFI_AUTH_WEP:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_WEP");
-        break;
-    case WIFI_AUTH_WPA_PSK:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_WPA_PSK");
-        break;
-    case WIFI_AUTH_WPA2_PSK:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_WPA2_PSK");
-        break;
-    case WIFI_AUTH_WPA_WPA2_PSK:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_WPA_WPA2_PSK");
-        break;
-    case WIFI_AUTH_ENTERPRISE:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_ENTERPRISE");
-        break;
-    case WIFI_AUTH_WPA3_PSK:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_WPA3_PSK");
-        break;
-    case WIFI_AUTH_WPA2_WPA3_PSK:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_WPA2_WPA3_PSK");
-        break;
-    case WIFI_AUTH_WPA3_ENT_192:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_WPA3_ENT_192");
-        break;
-    default:
-        ESP_LOGI(TAG, "Authmode \tWIFI_AUTH_UNKNOWN");
-        break;
+    HAT_CENTER = 0,
+    HAT_UP = 1,
+    HAT_RIGHT = 2,
+    HAT_DOWN = 3,
+    HAT_LEFT = 4,
+    HAT_UP_RIGHT = 5,
+    HAT_DOWN_RIGHT = 6,
+    HAT_DOWN_LEFT = 7,
+    HAT_UP_LEFT = 8
+};
+
+// Function Declarations
+void init_gpio(void);
+void start_wifi_ap(void);
+void start_http_server(void);
+void handle_buttons(void *arg);
+void update_hat_switch(void);
+void start_tinyusb(void);
+void send_gamepad_report(void);
+static void hid_host_task(void *arg);
+static void usb_host_event_callback(const usb_host_client_event_msg_t *event_msg, void *arg);
+static void send_keypress(uint8_t keycode);
+static void send_keyrelease(void);
+static void monitor_gpio_task(void *arg);
+// USB HID Host Setup
+usb_host_client_handle_t client_hdl = NULL;
+usb_device_handle_t device_hdl = NULL;
+
+// Send Keypress
+static void send_keypress(uint8_t keycode)
+{
+    uint8_t report[8] = {0};               // HID report: [Modifiers, Reserved, Keycode1, Keycode2...Keycode6]
+    report[2] = keycode;                   // Set the keycode to send
+    tud_hid_keyboard_report(0, 0, report); // Send HID report
+    ESP_LOGI(TAG, "Key pressed: 0x%02X", keycode);
+}
+
+// Send Key Release
+static void send_keyrelease(void)
+{
+    uint8_t report[8] = {0}; // Empty report to indicate key release
+    tud_hid_keyboard_report(0, 0, report);
+    ESP_LOGI(TAG, "Key released");
+}
+
+// Monitor GPIOs and Emulate Keypresses
+static void monitor_gpio_task(void *arg)
+{
+    while (1)
+    {
+        // Check each GPIO and send the corresponding keypress
+        if (gpio_get_level(HAT_UP_PIN) == 0)
+        {
+            send_keypress(KEY_ARROW_UP);
+        }
+        else if (gpio_get_level(HAT_DOWN_PIN) == 0)
+        {
+            send_keypress(KEY_ARROW_DOWN);
+        }
+        else if (gpio_get_level(HAT_LEFT_PIN) == 0)
+        {
+            send_keypress(KEY_ARROW_LEFT);
+        }
+        else if (gpio_get_level(HAT_RIGHT_PIN) == 0)
+        {
+            send_keypress(KEY_ARROW_RIGHT);
+        }
+        else if (gpio_get_level(HAT_CENTER_PIN) == 0)
+        {
+            send_keypress(KEY_ENTER);
+        }
+        else if (gpio_get_level(RECTANGLE_BUTTON_PIN) == 0)
+        {
+            send_keypress(KEY_A);
+        }
+        else if (gpio_get_level(CIRCLE_BUTTON_PIN) == 0)
+        {
+            send_keypress(KEY_B);
+        }
+        else if (gpio_get_level(CANCEL_BUTTON_PIN) == 0)
+        {
+            send_keypress(KEY_C);
+        }
+        else if (gpio_get_level(TRIANGLE_BUTTON_PIN) == 0)
+        {
+            send_keypress(KEY_D);
+        }
+        else if (gpio_get_level(PTT_BUTTON_PIN) == 0)
+        {
+            send_keypress(KEY_E);
+        }
+        else
+        {
+            // No button pressed, send key release
+            send_keyrelease();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10)); // Poll every 10ms
+    }
+}
+// USB Host Event Callback
+static void usb_host_event_callback(const usb_host_client_event_msg_t *event_msg, void *arg)
+{
+    if (event_msg->event == USB_HOST_CLIENT_EVENT_NEW_DEV)
+    {
+        device_hdl = event_msg->new_dev.device_handle;
+        ESP_LOGI(TAG, "New device connected.");
+    }
+    else if (event_msg->event == USB_HOST_CLIENT_EVENT_DEV_GONE)
+    {
+        ESP_LOGI(TAG, "Device disconnected.");
+        device_hdl = NULL;
     }
 }
 
-static void print_cipher_type(int pairwise_cipher, int group_cipher)
+// USB Host Task
+static void hid_host_task(void *arg)
 {
-    switch (pairwise_cipher) {
-    case WIFI_CIPHER_TYPE_NONE:
-        ESP_LOGI(TAG, "Pairwise Cipher \tWIFI_CIPHER_TYPE_NONE");
-        break;
-    case WIFI_CIPHER_TYPE_WEP40:
-        ESP_LOGI(TAG, "Pairwise Cipher \tWIFI_CIPHER_TYPE_WEP40");
-        break;
-    case WIFI_CIPHER_TYPE_WEP104:
-        ESP_LOGI(TAG, "Pairwise Cipher \tWIFI_CIPHER_TYPE_WEP104");
-        break;
-    case WIFI_CIPHER_TYPE_TKIP:
-        ESP_LOGI(TAG, "Pairwise Cipher \tWIFI_CIPHER_TYPE_TKIP");
-        break;
-    case WIFI_CIPHER_TYPE_CCMP:
-        ESP_LOGI(TAG, "Pairwise Cipher \tWIFI_CIPHER_TYPE_CCMP");
-        break;
-    case WIFI_CIPHER_TYPE_TKIP_CCMP:
-        ESP_LOGI(TAG, "Pairwise Cipher \tWIFI_CIPHER_TYPE_TKIP_CCMP");
-        break;
-    case WIFI_CIPHER_TYPE_AES_CMAC128:
-        ESP_LOGI(TAG, "Pairwise Cipher \tWIFI_CIPHER_TYPE_AES_CMAC128");
-        break;
-    case WIFI_CIPHER_TYPE_SMS4:
-        ESP_LOGI(TAG, "Pairwise Cipher \tWIFI_CIPHER_TYPE_SMS4");
-        break;
-    case WIFI_CIPHER_TYPE_GCMP:
-        ESP_LOGI(TAG, "Pairwise Cipher \tWIFI_CIPHER_TYPE_GCMP");
-        break;
-    case WIFI_CIPHER_TYPE_GCMP256:
-        ESP_LOGI(TAG, "Pairwise Cipher \tWIFI_CIPHER_TYPE_GCMP256");
-        break;
-    default:
-        ESP_LOGI(TAG, "Pairwise Cipher \tWIFI_CIPHER_TYPE_UNKNOWN");
-        break;
-    }
+    usb_host_client_config_t client_config = {
+        .is_synchronous = false,
+    };
+    const usb_host_config_t host_config = {
+        .skip_phy_setup = false,
+        .intr_flags = ESP_INTR_FLAG_LEVEL1,
+    };
+    usb_host_install(&host_config);
+    usb_host_client_register(&client_config, &client_hdl);
 
-    switch (group_cipher) {
-    case WIFI_CIPHER_TYPE_NONE:
-        ESP_LOGI(TAG, "Group Cipher \tWIFI_CIPHER_TYPE_NONE");
-        break;
-    case WIFI_CIPHER_TYPE_WEP40:
-        ESP_LOGI(TAG, "Group Cipher \tWIFI_CIPHER_TYPE_WEP40");
-        break;
-    case WIFI_CIPHER_TYPE_WEP104:
-        ESP_LOGI(TAG, "Group Cipher \tWIFI_CIPHER_TYPE_WEP104");
-        break;
-    case WIFI_CIPHER_TYPE_TKIP:
-        ESP_LOGI(TAG, "Group Cipher \tWIFI_CIPHER_TYPE_TKIP");
-        break;
-    case WIFI_CIPHER_TYPE_CCMP:
-        ESP_LOGI(TAG, "Group Cipher \tWIFI_CIPHER_TYPE_CCMP");
-        break;
-    case WIFI_CIPHER_TYPE_TKIP_CCMP:
-        ESP_LOGI(TAG, "Group Cipher \tWIFI_CIPHER_TYPE_TKIP_CCMP");
-        break;
-    case WIFI_CIPHER_TYPE_SMS4:
-        ESP_LOGI(TAG, "Group Cipher \tWIFI_CIPHER_TYPE_SMS4");
-        break;
-    case WIFI_CIPHER_TYPE_GCMP:
-        ESP_LOGI(TAG, "Group Cipher \tWIFI_CIPHER_TYPE_GCMP");
-        break;
-    case WIFI_CIPHER_TYPE_GCMP256:
-        ESP_LOGI(TAG, "Group Cipher \tWIFI_CIPHER_TYPE_GCMP256");
-        break;
-    default:
-        ESP_LOGI(TAG, "Group Cipher \tWIFI_CIPHER_TYPE_UNKNOWN");
-        break;
+    while (1)
+    {
+        if (device_hdl)
+        {
+            // Handle HID events here
+            ESP_LOGI(TAG, "Processing HID device...");
+            handle_buttons(NULL);
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
-#ifdef USE_CHANNEL_BTIMAP
-static void array_2_channel_bitmap(const uint8_t channel_list[], const uint8_t channel_list_size, wifi_scan_config_t *scan_config) {
-
-    for(uint8_t i = 0; i < channel_list_size; i++) {
-        uint8_t channel = channel_list[i];
-        scan_config->channel_bitmap.ghz_2_channels |= (1 << channel);
-    }
-}
-#endif /*USE_CHANNEL_BTIMAP*/
-
-
-/* Initialize Wi-Fi as sta and set scan method */
-static void wifi_scan(void)
+// HTTP Handlers
+esp_err_t handle_index(httpd_req_t *req)
 {
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
-    assert(sta_netif);
+    const char *index_html =
+        "<script src='/jquery.min.js'></script>"
+        "<h3>XCREMOTE Updater</h3>"
+        "<form method='POST' action='/update' enctype='multipart/form-data'>"
+        "<input type='file' name='update' style='width:600px'><br><br>"
+        "<input type='submit' value='Update'>"
+        "</form>";
+    httpd_resp_send(req, index_html, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+esp_err_t handle_jquery(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "application/javascript");
+    httpd_resp_send(req, (const char *)jquery_min_js_start, jquery_min_js_len);
+    return ESP_OK;
+}
+
+esp_err_t handle_update(httpd_req_t *req)
+{
+    ota_partition = esp_ota_get_next_update_partition(NULL);
+    if (!ota_partition)
+    {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No OTA partition found.");
+        return ESP_FAIL;
+    }
+    esp_ota_begin(ota_partition, OTA_SIZE_UNKNOWN, &ota_handle);
+
+    char buf[1024];
+    int remaining = req->content_len;
+    int bytes_received;
+    while (remaining > 0)
+    {
+        bytes_received = httpd_req_recv(req, buf, sizeof(buf));
+        if (bytes_received <= 0)
+        {
+            esp_ota_end(ota_handle);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA failed.");
+            return ESP_FAIL;
+        }
+        esp_ota_write(ota_handle, buf, bytes_received);
+        remaining -= bytes_received;
+    }
+
+    esp_ota_end(ota_handle);
+    esp_ota_set_boot_partition(ota_partition);
+    httpd_resp_sendstr(req, "OTA Update Complete. Rebooting...");
+    esp_restart();
+    return ESP_OK;
+}
+
+void start_http_server(void)
+{
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    httpd_start(&server, &config);
+
+    httpd_uri_t uri_index = {
+        .uri = "/",
+        .method = HTTP_GET,
+        .handler = handle_index};
+    httpd_register_uri_handler(server, &uri_index);
+
+    httpd_uri_t uri_jquery = {
+        .uri = "/jquery.min.js",
+        .method = HTTP_GET,
+        .handler = handle_jquery};
+    httpd_register_uri_handler(server, &uri_jquery);
+
+    httpd_uri_t uri_update = {
+        .uri = "/update",
+        .method = HTTP_POST,
+        .handler = handle_update};
+    httpd_register_uri_handler(server, &uri_update);
+}
+
+void start_wifi_ap(void)
+{
+    esp_netif_init();
+    esp_event_loop_create_default();
+    esp_netif_create_default_wifi_ap();
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    esp_wifi_init(&cfg);
 
-    uint16_t number = DEFAULT_SCAN_LIST_SIZE;
-    wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE];
-    uint16_t ap_count = 0;
-    memset(ap_info, 0, sizeof(ap_info));
+    wifi_config_t ap_config = {
+        .ap = {
+            .ssid = WIFI_SSID,
+            .password = WIFI_PASS,
+            .ssid_len = strlen(WIFI_SSID),
+            .max_connection = 4,
+            .authmode = WIFI_AUTH_WPA2_PSK}};
+    esp_wifi_set_mode(WIFI_MODE_AP);
+    esp_wifi_set_config(ESP_IF_WIFI_AP, &ap_config);
+    esp_wifi_start();
+    ESP_LOGI(TAG, "Wi-Fi Access Point started. SSID: %s", WIFI_SSID);
+}
 
+void init_gpio(void)
+{
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << HAT_UP_PIN) |
+                        (1ULL << HAT_DOWN_PIN) |
+                        (1ULL << HAT_LEFT_PIN) |
+                        (1ULL << HAT_RIGHT_PIN) |
+                        (1ULL << RECTANGLE_BUTTON_PIN) |
+                        (1ULL << CIRCLE_BUTTON_PIN) |
+                        (1ULL << CANCEL_BUTTON_PIN) |
+                        (1ULL << TRIANGLE_BUTTON_PIN) |
+                        (1ULL << PTT_BUTTON_PIN),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .intr_type = GPIO_INTR_DISABLE};
+    gpio_config(&io_conf);
+}
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_start());
-
-#ifdef USE_CHANNEL_BTIMAP
-    wifi_scan_config_t *scan_config = (wifi_scan_config_t *)calloc(1,sizeof(wifi_scan_config_t));
-    if (!scan_config) {
-        ESP_LOGE(TAG, "Memory Allocation for scan config failed!");
-        return;
+void handle_buttons(void *arg)
+{
+    while (1)
+    {
+        // Button handling logic
+        update_hat_switch();
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
-    array_2_channel_bitmap(channel_list, CHANNEL_LIST_SIZE, scan_config);
-    esp_wifi_scan_start(scan_config, true);
-    free(scan_config);
+}
 
-#else
-    esp_wifi_scan_start(NULL, true);
-#endif /*USE_CHANNEL_BTIMAP*/
+void update_hat_switch(void)
+{
+    uint8_t hat_position = HAT_CENTER;
 
-    ESP_LOGI(TAG, "Max AP number ap_info can hold = %u", number);
-    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
-    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&number, ap_info));
-    ESP_LOGI(TAG, "Total APs scanned = %u, actual AP number ap_info holds = %u", ap_count, number);
-    for (int i = 0; i < number; i++) {
-        ESP_LOGI(TAG, "SSID \t\t%s", ap_info[i].ssid);
-        ESP_LOGI(TAG, "RSSI \t\t%d", ap_info[i].rssi);
-        print_auth_mode(ap_info[i].authmode);
-        if (ap_info[i].authmode != WIFI_AUTH_WEP) {
-            print_cipher_type(ap_info[i].pairwise_cipher, ap_info[i].group_cipher);
-        }
-        ESP_LOGI(TAG, "Channel \t\t%d", ap_info[i].primary);
-    }
+    if (gpio_get_level(HAT_UP_PIN) == 0)
+        hat_position = HAT_UP;
+    else if (gpio_get_level(HAT_DOWN_PIN) == 0)
+        hat_position = HAT_DOWN;
+    else if (gpio_get_level(HAT_LEFT_PIN) == 0)
+        hat_position = HAT_LEFT;
+    else if (gpio_get_level(HAT_RIGHT_PIN) == 0)
+        hat_position = HAT_RIGHT;
+
+    gamepad_report[0] = hat_position; // Update the hat switch position
+                                      // send_gamepad_report();
+}
+
+// void start_tinyusb(void)
+// {
+//     const tinyusb_config_t tusb_cfg = {};
+//     ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
+//     ESP_LOGI(TAG, "TinyUSB HID started.");
+// }
+
+void send_gamepad_report(void)
+{
+    tud_hid_report(0, gamepad_report, sizeof(gamepad_report));
 }
 
 void app_main(void)
 {
+    ESP_LOGI(TAG, "Starting Joystick OTA...");
     // Initialize NVS
     esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
-    ESP_ERROR_CHECK( ret );
-
-    wifi_scan();
+    ESP_ERROR_CHECK(ret);
+    init_gpio();
+    start_wifi_ap();
+    start_http_server();
+    start_tinyusb();
+    // Start GPIO Monitoring Task
+    xTaskCreate(monitor_gpio_task, "monitor_gpio_task", 2048, NULL, 5, NULL);
+    //  xTaskCreate(handle_buttons, "button_task", 2048, NULL, 5, NULL);
+    // Start HID Host Task
+    // xTaskCreate(hid_host_task, "hid_host_task", USB_HOST_TASK_STACK_SIZE, NULL, USB_HOST_TASK_PRIORITY, NULL);
 }
