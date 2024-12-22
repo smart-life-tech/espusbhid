@@ -6,3 +6,5 @@
 espidf/build
 espidf/sdkconfig
 espidf/main/build
+espidf/managed_components/
+espidf/components/

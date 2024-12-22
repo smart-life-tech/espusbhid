@@ -18,6 +18,15 @@
 #include "esp_event.h"
 #include "nvs_flash.h"
 #include "regex.h"
+#include <stdio.h>
+#include <string.h>
+#include "freertos/task.h"
+#include "esp_http_server.h"
+#include "esp_ota_ops.h"
+#include "esp_netif.h"
+#include "driver/gpio.h"
+//#include "esp_tinyusb.h"
+//#include "tusb_hid.h"
 
 #define DEFAULT_SCAN_LIST_SIZE CONFIG_EXAMPLE_SCAN_LIST_SIZE
 
