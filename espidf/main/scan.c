@@ -128,7 +128,7 @@ static void send_keypress(uint8_t keycode)
 {
     uint8_t report[8] = {0};               // HID report: [Modifiers, Reserved, Keycode1, Keycode2...Keycode6]
     report[2] = keycode;                   // Set the keycode to send
-    tud_hid_keyboard_report(0, 0, report); // Send HID report
+    //tud_hid_keyboard_report(0, 0, report); // Send HID report
     ESP_LOGI(TAG, "Key pressed: 0x%02X", keycode);
 }
 
@@ -136,7 +136,7 @@ static void send_keypress(uint8_t keycode)
 static void send_keyrelease(void)
 {
     uint8_t report[8] = {0}; // Empty report to indicate key release
-    tud_hid_keyboard_report(0, 0, report);
+    //tud_hid_keyboard_report(0, 0, report);
     ESP_LOGI(TAG, "Key released");
 }
 
