@@ -11,6 +11,7 @@
     This example shows how to scan for available set of APs.
 */
 #include <string.h>
+#include <stdlib.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "esp_wifi.h"
@@ -21,20 +22,19 @@
 #include <stdio.h>
 #include <string.h>
 #include "freertos/task.h"
+#include "freertos/event_groups.h"
+#include "freertos/queue.h"
 #include "esp_http_server.h"
 #include "esp_ota_ops.h"
 #include "esp_netif.h"
 #include "driver/gpio.h"
 #include "tinyusb.h"
 #include "class/hid/hid_device.h"
-// #include "tusb_hid.h"
-#include "freertos/event_groups.h"
-#include "freertos/queue.h"
+#include "tusb.h"
 #include "esp_err.h"
 #include "esp_log.h"
 // #include "usb/usb_host.h"
 #include "errno.h"
-#include "driver/gpio.h"
 
 // #include "usb/hid_host.h"
 // #include "usb/hid_usage_keyboard.h"
@@ -75,19 +75,19 @@
 #define SHORT_PRESS_DURATION_MS 200
 
 // USB HID Gamepad Report
-static uint8_t gamepad_report[8];
-const char* hid_string_descriptor[5] = {
+//static uint8_t gamepad_report[8];
+const char *hid_string_descriptor[5] = {
     // array of pointer to string descriptors
-    (char[]){0x09, 0x04},  // 0: is supported language is English (0x0409)
-    "TinyUSB",             // 1: Manufacturer
-    "TinyUSB Device",      // 2: Product
-    "123456",              // 3: Serials, should use chip ID
-    "Example HID interface",  // 4: HID
+    (char[]){0x09, 0x04},    // 0: is supported language is English (0x0409)
+    "TinyUSB",               // 1: Manufacturer
+    "TinyUSB Device",        // 2: Product
+    "123456",                // 3: Serials, should use chip ID
+    "Example HID interface", // 4: HID
 };
 // OTA Update Variables
 esp_ota_handle_t ota_handle;
 const esp_partition_t *ota_partition = NULL;
-#define TUSB_DESC_TOTAL_LEN      (TUD_CONFIG_DESC_LEN + CFG_TUD_HID * TUD_HID_DESC_LEN)
+#define TUSB_DESC_TOTAL_LEN (TUD_CONFIG_DESC_LEN + CFG_TUD_HID * TUD_HID_DESC_LEN)
 
 // HTTP Server
 static httpd_handle_t server = NULL;
@@ -105,12 +105,51 @@ static const uint8_t hid_configuration_descriptor[] = {
     TUD_CONFIG_DESCRIPTOR(1, 1, 0, TUSB_DESC_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
 
     // Interface number, string index, boot protocol, report descriptor len, EP In address, size & polling interval
-    TUD_HID_DESCRIPTOR(0, 4, false, sizeof(hid_report_descriptor), 0x81, 16, 10),
+    // TUD_HID_DESCRIPTOR(0, 4, false, sizeof(hid_report_descriptor), 0x81, 16, 10),
 };
+// HID report structure for a gamepad
+typedef struct {
+    uint8_t buttons[2];  // 16 buttons (2 bytes)
+    uint8_t hat;         // Hat switch (4-bit value: 0–8)
+    int8_t x;            // X-axis (e.g., joystick)
+    int8_t y;            // Y-axis
+    int8_t z;            // Z-axis (e.g., trigger)
+    int8_t rz;           // Rotational Z-axis
+} __attribute__((packed)) hid_gamepad_report_ts;
 
+hid_gamepad_report_ts gamepad_report = {0};
+
+void Gamepad_hat(uint8_t hatPosition) {
+    gamepad_report.hat = hatPosition;  // Update the hat position
+    tud_hid_report(0, &gamepad_report, sizeof(gamepad_report));  // Send updated report
+}
+void Gamepad_pressButton(uint8_t button) {
+    if (button < 8) {
+        gamepad_report.buttons[0] |= (1 << button);  // Set the bit for the button (0–7)
+    } else {
+        gamepad_report.buttons[1] |= (1 << (button - 8));  // Set the bit for buttons 8–15
+    }
+    tud_hid_report(0, &gamepad_report, sizeof(gamepad_report));  // Send updated report
+}
+
+void Gamepad_releaseButton(uint8_t button) {
+    if (button < 8) {
+        gamepad_report.buttons[0] &= ~(1 << button);  // Clear the bit for the button (0–7)
+    } else {
+        gamepad_report.buttons[1] &= ~(1 << (button - 8));  // Clear the bit for buttons 8–15
+    }
+    tud_hid_report(0, &gamepad_report, sizeof(gamepad_report));  // Send updated report
+}
+void Gamepad_setAxis(int8_t x, int8_t y, int8_t z, int8_t rz) {
+    gamepad_report.x = x;
+    gamepad_report.y = y;
+    gamepad_report.z = z;
+    gamepad_report.rz = rz;
+    tud_hid_report(0, &gamepad_report, sizeof(gamepad_report));  // Send updated report
+}
 // Button states
-static bool button_pressed = false;
-static uint32_t button_press_start_time = 0;
+bool button_pressed = false;
+// uint32_t button_press_start_time = 0;
 
 // Static Files
 #define jquery_min_js_v3_2_1_gz_len 30178
@@ -160,6 +199,46 @@ enum
     HAT_DOWN_LEFT = 7,
     HAT_UP_LEFT = 8
 };
+// HID Report Descriptor for a Keyboard
+uint8_t const desc_hid_report[] = {
+    TUD_HID_REPORT_DESC_KEYBOARD() // Use the predefined keyboard descriptor
+};
+
+// Return the HID report descriptor
+uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance)
+{
+    static const uint8_t report_descriptor[] = {
+        TUD_HID_REPORT_DESC_KEYBOARD() // Use TinyUSB's predefined keyboard descriptor
+    };
+
+    (void)instance; // Ignore the instance parameter if not used
+    return report_descriptor;
+}
+
+// Called when the host requests a report
+uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen)
+{
+    (void)instance; // Ignore the instance parameter if not used
+    (void)report_id;
+    (void)report_type;
+    (void)buffer;
+    (void)reqlen;
+
+    // No report to send in this example
+    return 0;
+}
+
+// Called when the host sends an output report
+void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer, uint16_t bufsize)
+{
+    (void)instance; // Ignore the instance parameter if not used
+    (void)report_id;
+    (void)report_type;
+    (void)buffer;
+    (void)bufsize;
+
+    // Handle incoming reports here if needed
+}
 
 // Function Declarations
 void init_gpio(void);
@@ -174,6 +253,10 @@ void send_gamepad_report(void);
 static void send_keypress(uint8_t keycode);
 static void send_keyrelease(void);
 static void monitor_gpio_task(void *arg);
+uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance);
+uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen);
+void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer, uint16_t bufsize);
+
 // USB HID Host Setup
 // usb_host_client_handle_t client_hdl = NULL;
 // usb_device_handle_t device_hdl = NULL;
@@ -183,7 +266,8 @@ static void send_keypress(uint8_t keycode)
 {
     uint8_t report[8] = {0};               // HID report: [Modifiers, Reserved, Keycode1, Keycode2...Keycode6]
     report[2] = keycode;                   // Set the keycode to send
-    tud_hid_keyboard_report(0, 0, keycode); // Send HID report
+    tud_hid_keyboard_report(0, 0, report); // Send HID report
+    Gamepad_pressButton(keycode);
     ESP_LOGI(TAG, "Key pressed: 0x%02X", keycode);
 }
 
@@ -193,7 +277,9 @@ static void send_keyrelease(void)
     uint8_t report[8] = {0}; // Empty report to indicate key release
     // tud_hid_keyboard_report(0, 0, report);
     //  uint8_t keycode[6] = {HID_KEY_A};
+    report[2] = 0x00;
     tud_hid_keyboard_report(HID_ITF_PROTOCOL_KEYBOARD, 0, report);
+    Gamepad_releaseButton(report[2]);
     ESP_LOGI(TAG, "Key released");
 }
 
@@ -265,44 +351,44 @@ esp_err_t handle_index(httpd_req_t *req)
     //     "<input type='submit' value='Update'>"
     //     "</form>";
     /* Server Index Page */
-const char *serverIndex =
-    "<script src='/jquery.min.js'></script>"
-    "<h3>XCREMOTE Updater</h3>"
-    "<p>Version: " VERSION "</p>"
-    "<form method='POST' action='#' enctype='multipart/form-data' id='upload_form'>"
-    "<input type='file' name='update' style='width:600px'><br><br>"
-    "<input type='submit' value='Update'>"
-    "</form>"
-    "<div id='prg'>progress: 0%</div>"
-    "<script>"
-    "$('form').submit(function(e){"
-    "e.preventDefault();"
-    "var form = $('#upload_form')[0];"
-    "var data = new FormData(form);"
-    " $.ajax({"
-    "url: '/update',"
-    "type: 'POST',"
-    "data: data,"
-    "contentType: false,"
-    "processData:false,"
-    "xhr: function() {"
-    "var xhr = new window.XMLHttpRequest();"
-    "xhr.upload.addEventListener('progress', function(evt) {"
-    "if (evt.lengthComputable) {"
-    "var per = evt.loaded / evt.total;"
-    "$('#prg').html('progress: ' + Math.round(per*100) + '%');"
-    "}"
-    "}, false);"
-    "return xhr;"
-    "},"
-    "success:function(d, s) {"
-    "console.log('success!')"
-    "},"
-    "error: function (a, b, c) {"
-    "}"
-    "});"
-    "});"
-    "</script>";
+    const char *serverIndex =
+        "<script src='/jquery.min.js'></script>"
+        "<h3>XCREMOTE Updater</h3>"
+        "<p>Version: " VERSION "</p>"
+        "<form method='POST' action='#' enctype='multipart/form-data' id='upload_form'>"
+        "<input type='file' name='update' style='width:600px'><br><br>"
+        "<input type='submit' value='Update'>"
+        "</form>"
+        "<div id='prg'>progress: 0%</div>"
+        "<script>"
+        "$('form').submit(function(e){"
+        "e.preventDefault();"
+        "var form = $('#upload_form')[0];"
+        "var data = new FormData(form);"
+        " $.ajax({"
+        "url: '/update',"
+        "type: 'POST',"
+        "data: data,"
+        "contentType: false,"
+        "processData:false,"
+        "xhr: function() {"
+        "var xhr = new window.XMLHttpRequest();"
+        "xhr.upload.addEventListener('progress', function(evt) {"
+        "if (evt.lengthComputable) {"
+        "var per = evt.loaded / evt.total;"
+        "$('#prg').html('progress: ' + Math.round(per*100) + '%');"
+        "}"
+        "}, false);"
+        "return xhr;"
+        "},"
+        "success:function(d, s) {"
+        "console.log('success!')"
+        "},"
+        "error: function (a, b, c) {"
+        "}"
+        "});"
+        "});"
+        "</script>";
     httpd_resp_send(req, serverIndex, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
@@ -421,21 +507,31 @@ void handle_buttons(void *arg)
     }
 }
 
-void update_hat_switch(void)
-{
-    uint8_t hat_position = HAT_CENTER;
+void  update_hat_switch(void) {
+    int hatPosition = HAT_CENTER;  // Assume the hat is in the center initially
 
-    if (gpio_get_level(HAT_UP_PIN) == 0)
-        hat_position = HAT_UP;
-    else if (gpio_get_level(HAT_DOWN_PIN) == 0)
-        hat_position = HAT_DOWN;
-    else if (gpio_get_level(HAT_LEFT_PIN) == 0)
-        hat_position = HAT_LEFT;
-    else if (gpio_get_level(HAT_RIGHT_PIN) == 0)
-        hat_position = HAT_RIGHT;
+    // Check the combination of button presses for each hat position
+    if (gpio_get_level(HAT_UP_PIN) == 0 && gpio_get_level(HAT_LEFT_PIN) == 0) {
+        hatPosition = HAT_UP_LEFT;
+    } else if (gpio_get_level(HAT_UP_PIN) == 0 && gpio_get_level(HAT_RIGHT_PIN) == 0) {
+        hatPosition = HAT_UP_RIGHT;
+    } else if (gpio_get_level(HAT_DOWN_PIN) == 0 && gpio_get_level(HAT_LEFT_PIN) == 0) {
+        hatPosition = HAT_DOWN_LEFT;
+    } else if (gpio_get_level(HAT_DOWN_PIN) == 0 && gpio_get_level(HAT_RIGHT_PIN) == 0) {
+        hatPosition = HAT_DOWN_RIGHT;
+    } else if (gpio_get_level(HAT_UP_PIN) == 0) {
+        hatPosition = HAT_UP;
+    } else if (gpio_get_level(HAT_LEFT_PIN) == 0) {
+        hatPosition = HAT_LEFT;
+    } else if (gpio_get_level(HAT_DOWN_PIN) == 0) {
+        hatPosition = HAT_DOWN;
+    } else if (gpio_get_level(HAT_RIGHT_PIN) == 0) {
+        hatPosition = HAT_RIGHT;
+    }
 
-    gamepad_report[0] = hat_position; // Update the hat switch position
-    send_gamepad_report();
+    // Update the hat position in the Gamepad (or your HID implementation)
+    //Gamepad.hat(hatPosition);
+    Gamepad_hat(hatPosition);
 }
 
 void start_tinyusb(void)
@@ -479,8 +575,14 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
     init_gpio();
     start_wifi_ap();
-    start_http_server();
-    start_tinyusb();
+    button_pressed = gpio_get_level(HAT_CENTER_PIN);
+    if (button_pressed == 0)
+    {
+        ESP_LOGI(TAG, "Button pressed");
+        start_http_server();
+    }
+    else
+        start_tinyusb();
     // Start GPIO Monitoring Task
     xTaskCreate(monitor_gpio_task, "monitor_gpio_task", 2048, NULL, 5, NULL);
     //  xTaskCreate(handle_buttons, "button_task", 2048, NULL, 5, NULL);

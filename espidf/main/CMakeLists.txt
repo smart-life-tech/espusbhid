@@ -2,4 +2,4 @@
 idf_component_register(SRCS "scan.c"
                     INCLUDE_DIRS "."
                     REQUIRES esp_tinyusb
-                    PRIV_REQUIRES esp_wifi nvs_flash esp_http_server app_update esp_netif usb esp_driver_gpio)
+                    PRIV_REQUIRES esp_wifi nvs_flash esp_http_server app_update esp_netif  esp_driver_gpio)
