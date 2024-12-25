@@ -68,10 +68,10 @@
 const char *hid_string_descriptor[5] = {
     // array of pointer to string descriptors
     (char[]){0x09, 0x04},    // 0: is supported language is English (0x0409)
-    "TinyUSB",               // 1: Manufacturer
-    "TinyUSB Device",        // 2: Product
+    "xcnav",               // 1: Manufacturer
+    "xcnav Device",        // 2: Product
     "123456",                // 3: Serials, should use chip ID
-    "Example HID interface", // 4: HID
+    "XCNAV_Joystick_Remote", // 4: HID
 };
 // OTA Update Variables
 esp_ota_handle_t ota_handle;
