@@ -4,5 +4,6 @@
     "stm32-for-vscode.armToolchainPath": false,
     "files.associations": {
         "hid_device.h": "c"
-    }
+    },
+    "cmake.sourceDirectory": "C:/Users/USER/Documents/PlatformIO/Projects/espusbhid/espidf"
 }
